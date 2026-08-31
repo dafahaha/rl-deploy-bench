@@ -4,24 +4,46 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rl-deploy-bench"
-version = "1.0.0"
+version = "1.1.0"
 description = "Cross-platform reinforcement learning model deployment and performance benchmarking toolkit"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
-authors = [{name = "dafahaha"}]
-keywords = ["reinforcement-learning", "deployment", "benchmark", "onnx", "tensorrt", "quantization", "jetson", "edge-ai"]
+authors = [
+    {name = "dafahaha", email = "dafahaha@users.noreply.github.com"}
+]
+maintainers = [
+    {name = "dafahaha", email = "dafahaha@users.noreply.github.com"}
+]
+keywords = [
+    "reinforcement-learning",
+    "deployment",
+    "benchmark",
+    "onnx",
+    "tensorrt",
+    "quantization",
+    "jetson",
+    "edge-ai",
+    "embodied-ai",
+    "robotics",
+    "model-compression",
+    "inference",
+    "performance",
+]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Benchmark",
 ]
 
 dependencies = [
@@ -40,7 +62,27 @@ dependencies = [
 nvidia = ["nvidia-ml-py>=12.0"]
 jetson = ["jetson-stats>=4.0"]
 sb3 = ["stable-baselines3>=2.0", "gymnasium>=0.28"]
-dev = ["pytest>=7.0", "pytest-cov", "black", "isort", "mypy"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "black",
+    "isort",
+    "mypy",
+    "flake8",
+    "build",
+    "twine",
+]
+all = [
+    "rl-deploy-bench[nvidia,jetson,sb3,dev]",
+]
+
+[project.urls]
+Homepage = "https://github.com/dafahaha/rl-deploy-bench"
+Documentation = "https://github.com/dafahaha/rl-deploy-bench/blob/main/API.md"
+Repository = "https://github.com/dafahaha/rl-deploy-bench.git"
+Issues = "https://github.com/dafahaha/rl-deploy-bench/issues"
+Discussions = "https://github.com/dafahaha/rl-deploy-bench/discussions"
+Changelog = "https://github.com/dafahaha/rl-deploy-bench/blob/main/CHANGELOG.md"
 
 [project.scripts]
 rl-deploy-bench = "rl_deploy_bench.cli:app"
@@ -55,3 +97,22 @@ target-version = ["py39"]
 [tool.isort]
 profile = "black"
 line_length = 100
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.flake8]
+max-line-length = 100
+extend-ignore = ["E203", "W503"]
+exclude = [".git", "__pycache__", "build", "dist", "*.egg-info"]
