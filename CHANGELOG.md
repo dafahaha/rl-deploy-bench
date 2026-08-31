@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-08-31
+
+### Added
+- **TorchScript export and inference**: Export PyTorch models to TorchScript for Python-free deployment (LibTorch C++ runtime, mobile, embedded). Includes TorchScriptInference runtime and ONNX vs TorchScript output comparison.
+- **FP16 quantization**: Convert ONNX models to FP16 precision with automatic Cast node insertion. FP16 provides near-lossless accuracy with significant speedup on GPUs with native FP16 support (Jetson Xavier/Orin, RTX 20-series+). Includes FP16 impact evaluation and supported GPU list.
+- **Quantization Decision Guide example**: 3rd example demonstrating systematic evaluation of FP32/FP16/INT8-dynamic/INT8-static and automated recommendation based on latency, accuracy, and size.
+- **CLI `calibrate` command**: Generate calibration data from Gymnasium environments for static quantization.
+- **CLI `quantize --calibration-file`**: Support environment-based calibration datasets for static quantization.
+
+### Changed
+- Version bumped to 1.0.0 (first stable release)
+- Improved static quantization with environment-based calibration datasets
+- Enhanced CLI output with richer formatting and better error messages
+
+### Fixed
+- TorchScript model loading with non-ASCII (Chinese) paths on Windows
+- HTML/Markdown report crash when accuracy_results contains None values
+- ONNX export with dynamic batch dimension
+- Quantization temporary file path issues
+
 ## [0.2.0] - 2026-08-31
 
 ### Added
