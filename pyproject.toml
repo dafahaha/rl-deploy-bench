@@ -1,1 +1,57 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
+[project]
+name = "rl-deploy-bench"
+version = "1.0.0"
+description = "Cross-platform reinforcement learning model deployment and performance benchmarking toolkit"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "dafahaha"}]
+keywords = ["reinforcement-learning", "deployment", "benchmark", "onnx", "tensorrt", "quantization", "jetson", "edge-ai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "numpy>=1.21",
+    "torch>=1.13",
+    "onnx>=1.12",
+    "onnxruntime>=1.14",
+    "psutil>=5.9",
+    "plotly>=5.0",
+    "jinja2>=3.0",
+    "typer>=0.9",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+nvidia = ["nvidia-ml-py>=12.0"]
+jetson = ["jetson-stats>=4.0"]
+sb3 = ["stable-baselines3>=2.0", "gymnasium>=0.28"]
+dev = ["pytest>=7.0", "pytest-cov", "black", "isort", "mypy"]
+
+[project.scripts]
+rl-deploy-bench = "rl_deploy_bench.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py39"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
