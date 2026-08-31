@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: |
+          pytest tests/ -v --tb=short
+
+      - name: Check code formatting
+        run: |
+          pip install black isort
+          black --check src/ tests/
+          isort --check-only src/ tests/
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install linters
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black isort mypy
+
+      - name: Run flake8
+        run: |
+          flake8 src/ --max-line-length=100 --extend-ignore=E203,W503
+
+      - name: Check formatting
+        run: |
+          black --check src/ tests/
+          isort --check-only src/ tests/
