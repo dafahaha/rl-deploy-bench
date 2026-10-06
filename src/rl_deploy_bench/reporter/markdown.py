@@ -16,6 +16,11 @@ from ..quantizer.int8 import compare_model_sizes
 from ..utils.platform import PlatformInfo
 
 
+def _escape_pipe(text) -> str:
+    """Escape '|' so a user-supplied name/title cannot break Markdown table columns."""
+    return str(text).replace("|", "\\|")
+
+
 def generate_markdown_report(
     output_path: str,
     benchmark_results: List[BenchmarkResult],
@@ -82,7 +87,7 @@ def generate_markdown_report(
     for name, result in zip(model_names, benchmark_results):
         lat = result.latency
         lines.append(
-            f"| {name} | {lat.mean_ms:.3f} | {lat.p50_ms:.3f} | {lat.p90_ms:.3f} | "
+            f"| {_escape_pipe(name)} | {lat.mean_ms:.3f} | {lat.p50_ms:.3f} | {lat.p90_ms:.3f} | "
             f"{lat.p95_ms:.3f} | {lat.p99_ms:.3f} | {lat.min_ms:.3f} | "
             f"{lat.max_ms:.3f} | {lat.throughput_fps:.1f} |"
         )
@@ -112,7 +117,9 @@ def generate_markdown_report(
                 if result.avg_cpu_utilization is not None
                 else "N/A"
             )
-            lines.append(f"| {name} | {gpu_util} | {gpu_power} | {gpu_mem} | {cpu_util} |")
+            lines.append(
+                f"| {_escape_pipe(name)} | {gpu_util} | {gpu_power} | {gpu_mem} | {cpu_util} |"
+            )
         lines.append("")
 
     # Accuracy comparison (filter out None values)
@@ -135,7 +142,7 @@ def generate_markdown_report(
         )
         for name, acc in zip(valid_accuracy_names, valid_accuracy):
             lines.append(
-                f"| {name} | {acc.action_mse:.6f} | {acc.action_mae:.6f} | "
+                f"| {_escape_pipe(name)} | {acc.action_mse:.6f} | {acc.action_mae:.6f} | "
                 f"{acc.action_max_error:.6f} | "
                 f"{acc.action_cosine_similarity:.6f} | {acc.action_relative_error:.4f} |"
             )
@@ -151,7 +158,11 @@ def generate_markdown_report(
             lines.append(header)
             lines.append(sep)
             for name, acc in zip(valid_accuracy_names, valid_accuracy):
-                row = f"| {name} | " + " | ".join(f"{m:.6f}" for m in acc.per_dimension_mse) + " |"
+                row = (
+                    f"| {_escape_pipe(name)} | "
+                    + " | ".join(f"{m:.6f}" for m in acc.per_dimension_mse)
+                    + " |"
+                )
                 lines.append(row)
             lines.append("")
 
@@ -164,7 +175,7 @@ def generate_markdown_report(
         for name, path in zip(model_names, model_paths):
             if os.path.exists(path):
                 size_mb = os.path.getsize(path) / (1024 * 1024)
-                lines.append(f"| {name} | {size_mb:.2f} |")
+                lines.append(f"| {_escape_pipe(name)} | {size_mb:.2f} |")
         lines.append("")
 
         # Size reduction if first is original

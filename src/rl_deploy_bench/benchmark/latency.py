@@ -68,8 +68,9 @@ def benchmark_latency(
         monitor: Optional system monitor to collect metrics during benchmark.
         monitor_interval_ms: Interval between monitor snapshots in milliseconds.
         seed: Optional RNG seed for the synthetic benchmark observations. When
-            provided, benchmark runs are reproducible; when None (default), the
-            global numpy RNG is used and behavior is unchanged.
+            provided, the synthetic observations fed to the model are reproducible;
+            measured wall-clock latencies still vary with system load. When None
+            (default), the global numpy RNG is used and behavior is unchanged.
 
     Returns:
         BenchmarkResult with latency stats and system metrics.

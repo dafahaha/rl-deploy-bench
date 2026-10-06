@@ -108,11 +108,12 @@ def convert_onnx_to_fp16(
                 # Copy over raw_data
                 initializer.CopyFrom(new_initializer)
 
-    # Add Cast nodes for inputs (FP32 -> FP16)
+    # Add Cast nodes for inputs (FP32 -> FP16) and outputs (FP16 -> FP32).
     if config.keep_io_in_fp32:
-        new_nodes = []
+        input_casts = []
 
-        # For each input that is used by nodes, add a Cast node
+        # For each graph input used by nodes, insert a Cast (FP32 -> FP16) and
+        # rewire downstream node inputs to its FP16 output.
         cast_count = 0
         for inp in graph.input:
             if inp.type.tensor_type.elem_type == TensorProto.FLOAT:
@@ -124,7 +125,7 @@ def convert_onnx_to_fp16(
                     to=TensorProto.FLOAT16,
                     name=f"cast_input_{cast_count}",
                 )
-                new_nodes.append(cast_node)
+                input_casts.append(cast_node)
                 # Replace references to this input in nodes
                 for node in graph.node:
                     for i, inp_name in enumerate(node.input):
@@ -132,15 +133,19 @@ def convert_onnx_to_fp16(
                             node.input[i] = cast_name
                 cast_count += 1
 
-        # Add Cast nodes for outputs (FP16 -> FP32)
+        # Cast graph outputs back FP16 -> FP32. The producing node's output is
+        # renamed to an intermediate FP16 tensor; the Cast must be inserted
+        # immediately AFTER that producing node (not at the graph front) so the
+        # graph stays topologically sorted.
         for out in graph.output:
             if out.type.tensor_type.elem_type == TensorProto.FLOAT:
-                # Find the node that produces this output
                 fp16_output_name = f"fp16_output_{out.name}"
-                for node in graph.node:
+                producer_index = -1
+                for idx, node in enumerate(graph.node):
                     for i, out_name in enumerate(node.output):
                         if out_name == out.name:
                             node.output[i] = fp16_output_name
+                            producer_index = idx
 
                 cast_node = helper.make_node(
                     "Cast",
@@ -149,16 +154,20 @@ def convert_onnx_to_fp16(
                     to=TensorProto.FLOAT,
                     name=f"cast_output_{out.name}",
                 )
-                new_nodes.append(cast_node)
+                graph.node.insert(producer_index + 1, cast_node)
 
-        # Insert cast nodes at the beginning
-        for node in reversed(new_nodes):
+        # Input casts all go at the very front.
+        for node in reversed(input_casts):
             graph.node.insert(0, node)
 
     # Update value info types
     for value_info in graph.value_info:
         if value_info.type.tensor_type.elem_type == TensorProto.FLOAT:
             value_info.type.tensor_type.elem_type = TensorProto.FLOAT16
+
+    # The manual rewrite is best-effort. Validate the resulting graph instead of
+    # silently saving a model that ONNX Runtime cannot load/run.
+    onnx.checker.check_model(model)
 
     # Save model
     onnx.save(model, output_path)

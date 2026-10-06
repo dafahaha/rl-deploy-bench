@@ -27,11 +27,11 @@ class SB3OnnxablePolicy(OnnxablePolicy):
         policy = sb3_model.policy
         super().__init__(policy)
 
-        # Store action space bounds
-        if hasattr(sb3_model, "action_space"):
-            action_space = sb3_model.action_space
-            if hasattr(action_space, "low") and hasattr(action_space, "high"):
-                self.set_action_bounds(action_space.low, action_space.high)
+        # NOTE: SB3's ``policy._predict(..., deterministic=True)`` already
+        # returns actions mapped into the environment's action space. We do NOT
+        # call ``set_action_bounds`` here: applying a second tanh-unscaling on an
+        # already-scaled action would rescale it (verified empirically against
+        # ``model.predict``).
 
         # Store observation normalization if present
         self._obs_normalize = False
@@ -39,21 +39,15 @@ class SB3OnnxablePolicy(OnnxablePolicy):
             self._obs_normalize = True
 
     def forward(self, observation: torch.Tensor) -> torch.Tensor:
-        """Forward pass using SB3's _predict method for deterministic inference."""
-        # Use SB3's internal _predict which handles normalization properly
+        """Forward pass using SB3's ``_predict`` for deterministic inference.
+
+        ``policy._predict(..., deterministic=True)`` returns the final action in
+        the environment's action space (it matches ``model.predict`` to ~1e-8),
+        so it is returned as-is without any additional unscaling.
+        """
         if hasattr(self.policy, "_predict"):
-            action = self.policy._predict(observation, deterministic=True)
-        else:
-            action = super().forward(observation)
-
-        # Unscale actions
-        if self._normalize and self._action_low is not None and self._action_high is not None:
-            low = self._action_low.to(action.device)
-            high = self._action_high.to(action.device)
-            action = low + (action + 1.0) * 0.5 * (high - low)
-            action = torch.clamp(action, low, high)
-
-        return action
+            return self.policy._predict(observation, deterministic=True)
+        return super().forward(observation)
 
 
 def export_sb3_model(

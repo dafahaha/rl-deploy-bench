@@ -14,6 +14,30 @@ from typing import Optional, Sequence
 import numpy as np
 
 
+def _shape_inferred_temp_model(onnx_model_path: str) -> str:
+    """Run ONNX shape inference and write the annotated graph to a temp file.
+
+    onnxruntime's quantizers emit "Please consider to run pre-processing before
+    quantization" (and can hit internal errors on some ops) when the input graph
+    lacks inferred value-info shapes. Running shape inference up front and feeding
+    the annotated graph to the quantizer removes that warning; all quantization
+    entry points share this preprocessing so their behavior stays consistent.
+
+    Returns the path to a temp ONNX file. The caller owns deleting it.
+    """
+    import tempfile
+
+    import onnx
+    from onnx import shape_inference
+
+    model = onnx.load(onnx_model_path)
+    inferred_model = shape_inference.infer_shapes(model)
+    with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as tmp:
+        tmp_path = tmp.name
+    onnx.save(inferred_model, tmp_path)
+    return tmp_path
+
+
 @dataclass
 class QuantizationConfig:
     """Configuration for model quantization."""
@@ -43,8 +67,6 @@ def dynamic_quantize(
     Returns:
         Absolute path to quantized model.
     """
-    import tempfile
-
     from onnxruntime.quantization import QuantType, quantize_dynamic
 
     if config is None:
@@ -57,16 +79,7 @@ def dynamic_quantize(
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
     # Pre-run shape inference to avoid onnxruntime internal path issues
-    import onnx
-    from onnx import shape_inference
-
-    model = onnx.load(onnx_model_path)
-    inferred_model = shape_inference.infer_shapes(model)
-
-    # Save to a temp file for quantization input
-    with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as tmp:
-        tmp_path = tmp.name
-    onnx.save(inferred_model, tmp_path)
+    tmp_path = _shape_inferred_temp_model(onnx_model_path)
 
     try:
         weight_type = QuantType.QInt8 if config.weight_type == "int8" else QuantType.QUInt8
@@ -172,16 +185,25 @@ def static_quantize(
     weight_type = QuantType.QInt8 if config.weight_type == "int8" else QuantType.QUInt8
     quant_format = QuantFormat.QDQ if config.quant_format == "QDQ" else QuantFormat.QOperator
 
-    quantize_static(
-        model_input=onnx_model_path,
-        model_output=output_path,
-        calibration_data_reader=reader,
-        quant_format=quant_format,
-        weight_type=weight_type,
-        activation_type=activation_type,
-        per_channel=config.per_channel,
-        reduce_range=config.reduce_range,
-    )
+    # Pre-run shape inference so the random-calibration path matches the dataset
+    # path and avoids onnxruntime's "pre-processing" warning.
+    tmp_path = _shape_inferred_temp_model(onnx_model_path)
+    try:
+        quantize_static(
+            model_input=tmp_path,
+            model_output=output_path,
+            calibration_data_reader=reader,
+            quant_format=quant_format,
+            weight_type=weight_type,
+            activation_type=activation_type,
+            per_channel=config.per_channel,
+            reduce_range=config.reduce_range,
+        )
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
     return os.path.abspath(output_path)
 
@@ -240,8 +262,6 @@ def static_quantize_with_dataset(
     Returns:
         Absolute path to quantized model.
     """
-    import tempfile
-
     from onnxruntime.quantization import QuantFormat, QuantType, quantize_static
 
     if config is None:
@@ -253,16 +273,8 @@ def static_quantize_with_dataset(
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
-    # Pre-run shape inference
-    import onnx
-    from onnx import shape_inference
-
-    model = onnx.load(onnx_model_path)
-    inferred_model = shape_inference.infer_shapes(model)
-
-    with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as tmp:
-        tmp_path = tmp.name
-    onnx.save(inferred_model, tmp_path)
+    # Pre-run shape inference (shared preprocessing; see helper).
+    tmp_path = _shape_inferred_temp_model(onnx_model_path)
 
     # Create calibration data reader from dataset
     class _DatasetReader:

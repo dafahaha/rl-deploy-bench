@@ -66,9 +66,14 @@ model = load_sb3_model("ppo_model.zip", algo="PPO")
 onnx_path = export_sb3_model(model, "ppo.onnx")
 ```
 
-### `verify_onnx_export(onnx_path, policy, observation_shape, atol=1e-4) -> dict`
+### `verify_onnx_export(onnx_path, policy, observation_shape, atol=1e-4, action_low=None, action_high=None) -> dict`
 
 Verify that ONNX export matches PyTorch output.
+
+If the model was exported with `action_low`/`action_high` (continuous-action
+bounds), you **must pass the same bounds here**: the verification-side
+wrapper applies the identical tanh-unscaling, otherwise the two sides differ by
+an affine transform and verification spuriously fails.
 
 **Returns:** `{"passed": bool, "max_abs_diff": float, "mean_abs_diff": float, ...}`
 
@@ -111,14 +116,18 @@ if is_tensorrt_available():
 
 ## Benchmarking
 
-### `benchmark_latency(inference, observation_shape, num_warmup=50, num_runs=500, batch_size=1, monitor=None) -> BenchmarkResult`
+### `benchmark_latency(inference, observation_shape, num_warmup=50, num_runs=500, batch_size=1, monitor=None, monitor_interval_ms=100.0, seed=None) -> BenchmarkResult`
 
 Run latency and throughput benchmark.
+
+`monitor_interval_ms` sets the snapshot interval when a `monitor` is supplied;
+`seed` fixes the synthetic observations (measured wall-clock latencies still vary
+with system load).
 
 ```python
 from rl_deploy_bench.benchmark import benchmark_latency
 
-result = benchmark_latency(inference, observation_shape=(4,), num_runs=500)
+result = benchmark_latency(inference, observation_shape=(4,), num_runs=500, seed=7)
 print(f"P95: {result.latency.p95_ms:.3f} ms")
 print(f"Throughput: {result.latency.throughput_fps:.1f} FPS")
 ```

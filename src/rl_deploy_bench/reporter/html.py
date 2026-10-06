@@ -190,7 +190,10 @@ def generate_html_report(
     for name, result in zip(model_names, benchmark_results):
         lat = result.latency
         safe_name = _html.escape(str(name))
-        row = f"<tr><td>{safe_name}</td><td>{lat.mean_ms:.3f}</td><td>{lat.p50_ms:.3f}</td>"
+        row = (
+            f"<tr><td>{safe_name}</td><td>{lat.mean_ms:.3f}</td>"
+            f"<td>{lat.p50_ms:.3f}</td><td>{lat.p90_ms:.3f}</td>"
+        )
         row += f"<td>{lat.p95_ms:.3f}</td><td>{lat.p99_ms:.3f}</td>"
         row += f"<td>{lat.throughput_fps:.1f}</td></tr>"
         summary_rows.append(row)
@@ -246,8 +249,8 @@ def generate_html_report(
 
         <h2>Summary</h2>
         <table>
-            <tr><th>Model</th><th>Mean (ms)</th><th>P50 (ms)</th><th>P95 (ms)</th>
-            <th>P99 (ms)</th><th>Throughput (FPS)</th></tr>
+            <tr><th>Model</th><th>Mean (ms)</th><th>P50 (ms)</th><th>P90 (ms)</th>
+            <th>P95 (ms)</th><th>P99 (ms)</th><th>Throughput (FPS)</th></tr>
             {''.join(summary_rows)}
         </table>
 

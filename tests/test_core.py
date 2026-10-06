@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import warnings
 
 import numpy as np
 import pytest
@@ -151,7 +152,14 @@ class TestModelExport:
         output_path = os.path.join(tmp_dir, "test_bounds_dyn.onnx")
         low = np.array([-2.0, -1.0])
         high = np.array([2.0, 1.0])
-        export_to_onnx(policy, obs_shape, output_path, action_low=low, action_high=high)
+        # M4: exporting must not emit a torch.jit.TracerWarning. A regression to
+        # the old Python-level `if low.shape[0] == 1` form gets traced as a
+        # constant (the dummy input has batch=1) and warns here.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            export_to_onnx(policy, obs_shape, output_path, action_low=low, action_high=high)
+        tracer = [w for w in caught if issubclass(w.category, torch.jit.TracerWarning)]
+        assert not tracer, [str(w.message) for w in tracer]
 
         # verify_onnx_export must be told the bounds (M2) and must now pass.
         verify = verify_onnx_export(
@@ -375,6 +383,40 @@ class TestQuantization:
         # FP16 on CPU keeps IO in FP32; outputs should be very close.
         assert np.allclose(a, b, atol=1e-2)
 
+    def test_fp16_manual_fallback_method2_runs(self, policy, obs_shape, tmp_dir, monkeypatch):
+        """R-建议-4: when onnxruntime's float16 converter is unavailable, the
+        manual Method-2 fallback must still emit a topologically valid, runnable
+        model (validated by onnx.checker at the end of conversion)."""
+        import onnxruntime as ort
+
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer.fp16 import convert_onnx_to_fp16
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+
+        # Force `from onnxruntime.transformers.float16 import ...` to raise
+        # ImportError by leaving a None entry in sys.modules.
+        monkeypatch.setitem(sys.modules, "onnxruntime.transformers.float16", None)
+
+        fp16_path = os.path.join(tmp_dir, "test_fp16_m2.onnx")
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            out = convert_onnx_to_fp16(onnx_path, fp16_path)
+        assert any("manual FP16 conversion" in str(w.message) for w in caught)
+
+        assert os.path.exists(out)
+        # Must load AND run in onnxruntime, not merely pass onnx.checker.
+        sess = ort.InferenceSession(out, providers=["CPUExecutionProvider"])
+        in_name = sess.get_inputs()[0].name
+        obs = np.random.randn(4, *obs_shape).astype(np.float32)
+        half = sess.run(None, {in_name: obs})[0]
+
+        ref = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+        full = ref.run(None, {in_name: obs})[0]
+        assert half.shape == full.shape
+        assert np.allclose(half, full, atol=1e-2)
+
 
 # ============================================================
 # Report generation tests
@@ -450,6 +492,46 @@ class TestReportGeneration:
         # Raw script tag must not appear; the escaped form must.
         assert "<script>alert(1)</script>" not in content
         assert "&lt;script&gt;" in content
+
+    def test_html_summary_table_has_p90(self, policy, obs_shape, tmp_dir):
+        """R-建议-1: the embedded HTML summary table must include a P90 column,
+        matching the Markdown table and the percentile bar chart."""
+        from rl_deploy_bench.benchmark.latency import benchmark_latency
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.reporter.html import generate_html_report
+        from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+        inference = OnnxRuntimeInference(onnx_path)
+        result = benchmark_latency(inference, obs_shape, num_warmup=5, num_runs=20)
+
+        report_path = os.path.join(tmp_dir, "report.html")
+        output = generate_html_report(report_path, [result], ["M"], platform_info=None)
+        with open(output, "r", encoding="utf-8") as f:
+            content = f.read()
+        assert "<th>P90 (ms)</th>" in content
+
+    def test_markdown_report_escapes_pipe_in_name(self, policy, obs_shape, tmp_dir):
+        """R-吹毛-2: a model name containing '|' must be escaped so it cannot
+        shift Markdown table columns."""
+        from rl_deploy_bench.benchmark.latency import benchmark_latency
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.reporter.markdown import generate_markdown_report
+        from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+        inference = OnnxRuntimeInference(onnx_path)
+        result = benchmark_latency(inference, obs_shape, num_warmup=5, num_runs=20)
+
+        report_path = os.path.join(tmp_dir, "report.md")
+        output = generate_markdown_report(report_path, [result], ["a|b|c"])
+        with open(output, "r", encoding="utf-8") as f:
+            content = f.read()
+        # The escaped form must appear; the name cannot split the row into extra
+        # columns.
+        assert r"a\|b\|c" in content
 
 
 # ============================================================
@@ -553,6 +635,52 @@ class TestCLICompare:
         assert content.lstrip().lower().startswith("<!doctype html") or "<html" in content
         # A real HTML report contains plotly; a markdown report would not.
         assert "plotly" in content.lower()
+
+
+# ============================================================
+# Stable Baselines3 export tests (guarded; skipped without the [sb3] extra)
+# ============================================================
+
+
+class TestSB3Export:
+    def test_sb3_onnx_matches_predict(self, tmp_dir):
+        """R-建议-2: SB3 export must NOT double-unscale continuous actions.
+
+        ``policy._predict`` already returns actions mapped into the action space;
+        re-applying the tanh-unscale produced ~2x-deviating ONNX output. This
+        test trains a tiny PPO on Pendulum-v1 and checks ONNX output matches
+        ``model.predict`` tightly. Skipped automatically when SB3 is absent.
+        """
+        pytest.importorskip("stable_baselines3")
+        import warnings
+
+        import onnxruntime as ort
+        from stable_baselines3 import PPO
+
+        from rl_deploy_bench.exporter.sb3 import export_sb3_model, verify_sb3_export
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            model = PPO("MlpPolicy", "Pendulum-v1", verbose=0, seed=0, device="cpu")
+            model.learn(total_timesteps=500)
+
+        obs_shape = model.observation_space.shape
+        onnx_path = os.path.join(tmp_dir, "sb3.onnx")
+        export_sb3_model(model, onnx_path)
+
+        rng = np.random.default_rng(0)
+        test_obs = rng.standard_normal((16, *obs_shape)).astype(np.float32)
+        pred = np.array([model.predict(o, deterministic=True)[0] for o in test_obs])
+
+        sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+        onnx_a = sess.run(None, {sess.get_inputs()[0].name: test_obs})[0]
+
+        # A second unscale would give ~0.1+ deviation; tight match confirms the
+        # action was returned as-is.
+        assert np.allclose(onnx_a, pred, atol=1e-5), float(np.max(np.abs(onnx_a - pred)))
+
+        v = verify_sb3_export(onnx_path, model, num_samples=16, atol=1e-5)
+        assert bool(v["passed"]) is True, v
 
 
 # ============================================================
