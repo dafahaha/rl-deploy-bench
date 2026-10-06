@@ -1126,12 +1126,17 @@ class TestTorchScriptExport:
         info = ti.get_provider_info()
         assert info["backend"] == "torchscript"
         assert info["device"] == "cpu"
+        # R7-吹毛-1: a traced TorchScript graph exposes no static input shape,
+        # so it is captured from the first infer() call (x above is (5, 4)).
+        # This is what feeds the Markdown report's "Input shape" row.
+        assert info["input_shape"] == [5, 4]
 
         # benchmark_latency must run end-to-end without AttributeError on the
         # TorchScript runtime.
         bench = benchmark_latency(ti, obs_shape, num_warmup=2, num_runs=5)
         assert bench.latency.num_runs == 5
         assert bench.model_info["backend"] == "torchscript"
+        assert bench.model_info["input_shape"] == [5, 4]
 
 
 if __name__ == "__main__":

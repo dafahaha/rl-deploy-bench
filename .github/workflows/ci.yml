@@ -24,7 +24,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          # Include the sb3 extra: test_sb3_onnx_matches_predict guards against
+          # the action-bounds double-unscale regression, and must actually run
+          # in CI rather than being importorskip-skipped because dev alone
+          # does not pull in stable-baselines3.
+          pip install -e ".[dev,sb3]"
 
       - name: Run tests
         run: |

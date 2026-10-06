@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **FP16 conversion silently swallowed all exceptions**: `except (ImportError, Exception): pass` masked real converter failures. Now only `ImportError` (converter unavailable) warns and falls back to the manual path; any other converter error is re-raised as `RuntimeError`.
 - **`np.load(allow_pickle=True)` on calibration datasets**: datasets are saved as plain `.npz` arrays; `allow_pickle=False` avoids deserializing arbitrary objects.
 - **CLI `compare` divide-by-zero on degenerate models**: percentage-change cells now render `n/a` when the denominator latency/throughput is zero instead of raising `ZeroDivisionError`.
+- **Markdown report title injection**: the top-level `# {title}` now goes through the same pipe-escaping/newline-folding as model names, so a newline in the title can no longer inject an arbitrary Markdown section at column 0.
+- **NVML session leak on `NvidiaGPUMonitor.start()` failure**: when `nvmlInit()` succeeded but `nvmlDeviceGetHandleByIndex()` raised, the handle error path now calls `pynvml.nvmlShutdown()` before re-raising, so the NVML session is not left open.
 
 ### Changed
 - `rl_deploy_bench.__version__` is now `1.1.0`, matching `pyproject.toml`.
@@ -28,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TorchScriptInference` now implements the unified inference duck-interface: `infer()` returns `InferenceResult` (`.actions` / `.latency_ms`) and `get_provider_info()` exists, so it can be passed to `benchmark_latency()` and the accuracy/quantization evaluators like `OnnxRuntimeInference`.
 - TorchScript export (`torch.jit.trace`/`freeze`/`optimize_for_inference`) is documented as targeting **legacy PyTorch** deployments: on Python 3.14+ PyTorch emits `FutureWarning`; the forward direction is `torch.export` / `torch.compile`, and the ONNX export path is recommended for new projects.
 - Removed the `/sys/class/gpio/export` heuristic from Jetson detection (it exists on many non-Jetson Linux systems).
+- API documentation now covers the TorchScript export/inference surface (`export_to_torchscript`, `verify_torchscript_export`, `TorchScriptInference`, `compare_onnx_torchscript`) and the `OnnxRuntimeInference(provider_options=...)` argument.
+- CI no longer runs `mypy src/` as a dead step (it currently reports ~48 pre-existing typing errors); the `[tool.mypy]` config remains available for local opt-in runs.
+- `torchscript_export` now imports `time` at module top instead of inside `TorchScriptInference.infer()`.
 
 ## [1.0.0] - 2026-08-31
 

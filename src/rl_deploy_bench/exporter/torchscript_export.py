@@ -184,6 +184,10 @@ class TorchScriptInference:
         self.device = torch.device(device)
         self.model = _safe_load_torchscript(model_path)
         self.model.eval()
+        # Traced TorchScript graphs do not carry static input shapes in their
+        # type info (unlike ONNX session metadata), so the shape actually fed
+        # to the model is captured on the first infer() call below.
+        self._input_shape: Optional[list] = None
 
     def infer(self, observation: np.ndarray) -> InferenceResult:
         """Run single inference.
@@ -201,6 +205,9 @@ class TorchScriptInference:
             observation = observation[np.newaxis]
 
         obs_tensor = torch.tensor(observation, dtype=torch.float32, device=self.device)
+
+        if self._input_shape is None:
+            self._input_shape = list(obs_tensor.shape)
 
         # Warmup on first call
         if not hasattr(self, "_warmed_up"):
@@ -239,13 +246,17 @@ class TorchScriptInference:
         """Get information about the active TorchScript backend.
 
         Mirrors OnnxRuntimeInference.get_provider_info() so benchmark_latency
-        can attach the result to BenchmarkResult.model_info.
+        can attach the result to BenchmarkResult.model_info. ``input_shape`` is
+        the shape of the first observation actually fed through ``infer()``
+        (traced TorchScript graphs expose no static input shape); it stays
+        "N/A" until the first inference.
         """
         return {
             "active_providers": [f"torchscript:{self.device.type}"],
             "backend": "torchscript",
             "device": self.device.type,
             "model_path": self.model_path,
+            "input_shape": self._input_shape if self._input_shape is not None else "N/A",
         }
 
 
