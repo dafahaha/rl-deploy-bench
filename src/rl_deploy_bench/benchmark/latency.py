@@ -74,7 +74,14 @@ def benchmark_latency(
 
     Returns:
         BenchmarkResult with latency stats and system metrics.
+
+    Raises:
+        ValueError: If ``num_runs`` is not positive (percentiles over an empty
+            latency array would only yield NaNs and a misleading throughput).
     """
+    if num_runs <= 0:
+        raise ValueError(f"num_runs must be a positive integer, got {num_runs}.")
+
     # Warmup
     inference.warmup(num_runs=num_warmup, observation_shape=observation_shape)
 

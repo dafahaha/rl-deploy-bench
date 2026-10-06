@@ -33,11 +33,6 @@ class SB3OnnxablePolicy(OnnxablePolicy):
         # already-scaled action would rescale it (verified empirically against
         # ``model.predict``).
 
-        # Store observation normalization if present
-        self._obs_normalize = False
-        if hasattr(policy, "obs_rms") and policy.obs_rms is not None:
-            self._obs_normalize = True
-
     def forward(self, observation: torch.Tensor) -> torch.Tensor:
         """Forward pass using SB3's ``_predict`` for deterministic inference.
 

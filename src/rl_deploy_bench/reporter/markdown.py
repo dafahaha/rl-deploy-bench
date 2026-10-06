@@ -235,6 +235,7 @@ def generate_latency_distribution_data(
         data[name] = {
             "latencies": result.latency.latencies_ms,
             "p50": result.latency.p50_ms,
+            "p90": result.latency.p90_ms,
             "p95": result.latency.p95_ms,
             "p99": result.latency.p99_ms,
             "mean": result.latency.mean_ms,

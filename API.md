@@ -132,6 +132,11 @@ print(f"P95: {result.latency.p95_ms:.3f} ms")
 print(f"Throughput: {result.latency.throughput_fps:.1f} FPS")
 ```
 
+`throughput_fps` is **pure inference compute throughput**: it sums the per-run
+`session.run` latency only and excludes Python scheduling, tensor assembly, and
+monitor snapshot overhead, so it is systematically higher than a real end-to-end
+deployment FPS.
+
 **LatencyStats fields:**
 - `mean_ms`, `std_ms`, `min_ms`, `max_ms`
 - `p50_ms`, `p90_ms`, `p95_ms`, `p99_ms`

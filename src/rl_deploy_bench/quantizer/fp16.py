@@ -91,7 +91,18 @@ def convert_onnx_to_fp16(
         raise RuntimeError(f"FP16 conversion via onnxruntime failed: {e}") from e
 
     # Method 2: Manual conversion using onnx helper
-    # Convert weights to FP16
+    # The manual rewrite converts every float initializer and rewires the whole
+    # graph; it has no per-op skipping logic, so config.op_blocklist cannot be
+    # honored here. Warn loudly instead of silently ignoring the user's intent.
+    if config.op_blocklist:
+        import warnings
+
+        warnings.warn(
+            "op_blocklist is ignored by the manual FP16 fallback "
+            "(onnxruntime.transformers.float16 unavailable); "
+            f"{tuple(config.op_blocklist)} will be converted to FP16 anyway."
+        )
+
     graph = model.graph
 
     if config.convert_weights:

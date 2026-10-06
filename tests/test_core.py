@@ -256,6 +256,15 @@ class TestLatencyBenchmark:
         assert result.latency.throughput_fps > 0
         assert len(result.latency.latencies_ms) == 50
 
+    def test_benchmark_rejects_nonpositive_num_runs(self, obs_shape):
+        """R3-吹毛-4: num_runs<=0 would yield NaN percentiles; reject early."""
+        from rl_deploy_bench.benchmark.latency import benchmark_latency
+
+        # The check runs before the inference object is touched, so a dummy is
+        # enough.
+        with pytest.raises(ValueError):
+            benchmark_latency(object(), obs_shape, num_warmup=0, num_runs=0)
+
 
 # ============================================================
 # Accuracy comparison tests
@@ -359,6 +368,54 @@ class TestQuantization:
         result = inference.infer(obs)
         assert result.actions.shape == (1, 2)
 
+    def test_static_quantize_respects_custom_input_name(self, policy, obs_shape, tmp_dir):
+        """R3-应改-1: the random-calibration path must accept the model's real
+        input name, matching static_quantize_with_dataset. A model exported as
+        input 'obs' must calibrate against 'obs', not the hardcoded
+        'observation'."""
+        from rl_deploy_bench.exporter.onnx_export import ExportConfig, export_to_onnx
+        from rl_deploy_bench.quantizer.int8 import static_quantize
+        from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
+
+        onnx_path = os.path.join(tmp_dir, "test_obs.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path, config=ExportConfig(input_names=("obs",)))
+
+        quantized_path = os.path.join(tmp_dir, "test_obs_static.onnx")
+        quantized_path = static_quantize(
+            onnx_path, obs_shape, quantized_path, calibration_samples=8, input_name="obs"
+        )
+        assert os.path.exists(quantized_path)
+
+        inference = OnnxRuntimeInference(quantized_path)
+        obs = np.random.randn(1, *obs_shape).astype(np.float32)
+        result = inference.infer(obs)
+        assert result.actions.shape == (1, 2)
+
+    def test_shape_inferred_temp_model_cleans_up_when_save_fails(
+        self, policy, obs_shape, tmp_dir, monkeypatch
+    ):
+        """R3-建议-3: if onnx.save raises inside the shared helper, the temp
+        file it created must be unlinked before the error propagates."""
+        import onnx
+
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer.int8 import _shape_inferred_temp_model
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+
+        recorded = {}
+
+        def boom(_model, path):
+            recorded["path"] = path
+            raise RuntimeError("simulated write failure")
+
+        monkeypatch.setattr(onnx, "save", boom)
+        with pytest.raises(RuntimeError, match="simulated write failure"):
+            _shape_inferred_temp_model(onnx_path)
+        assert "path" in recorded
+        assert not os.path.exists(recorded["path"])
+
     def test_fp16_conversion_roundtrip(self, policy, obs_shape, tmp_dir):
         """N6: FP16 conversion must produce a loadable model that runs and
         stays close to FP32."""
@@ -416,6 +473,28 @@ class TestQuantization:
         full = ref.run(None, {in_name: obs})[0]
         assert half.shape == full.shape
         assert np.allclose(half, full, atol=1e-2)
+
+    def test_fp16_manual_fallback_warns_about_op_blocklist(
+        self, policy, obs_shape, tmp_dir, monkeypatch
+    ):
+        """R3-建议-1: the manual Method-2 fallback cannot honor op_blocklist;
+        it must warn explicitly instead of silently ignoring the setting."""
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer.fp16 import FP16Config, convert_onnx_to_fp16
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+
+        # Force the manual fallback (see test_fp16_manual_fallback_method2_runs).
+        monkeypatch.setitem(sys.modules, "onnxruntime.transformers.float16", None)
+
+        fp16_path = os.path.join(tmp_dir, "test_fp16_bl.onnx")
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            convert_onnx_to_fp16(onnx_path, fp16_path, config=FP16Config(op_blocklist=("Softmax",)))
+
+        msgs = [str(w.message) for w in caught]
+        assert any("op_blocklist" in m and "ignored" in m for m in msgs), msgs
 
 
 # ============================================================
@@ -532,6 +611,29 @@ class TestReportGeneration:
         # The escaped form must appear; the name cannot split the row into extra
         # columns.
         assert r"a\|b\|c" in content
+
+    def test_latency_distribution_data_includes_p90(self):
+        """R3-吹毛-2: the plot-data helper must expose p90 like every other
+        percentile, positioned between p50 and p95."""
+        from types import SimpleNamespace
+
+        from rl_deploy_bench.reporter.markdown import generate_latency_distribution_data
+
+        result = SimpleNamespace(
+            latency=SimpleNamespace(
+                latencies_ms=[1.0, 2.0],
+                p50_ms=1.0,
+                p90_ms=1.8,
+                p95_ms=1.9,
+                p99_ms=2.0,
+                mean_ms=1.5,
+            )
+        )
+        data = generate_latency_distribution_data([result], ["M"])
+        assert data["M"]["p90"] == 1.8
+        keys = list(data["M"])
+        assert keys.index("p90") == keys.index("p50") + 1
+        assert keys.index("p95") == keys.index("p90") + 1
 
 
 # ============================================================

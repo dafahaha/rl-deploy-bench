@@ -34,7 +34,17 @@ def _shape_inferred_temp_model(onnx_model_path: str) -> str:
     inferred_model = shape_inference.infer_shapes(model)
     with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as tmp:
         tmp_path = tmp.name
-    onnx.save(inferred_model, tmp_path)
+    try:
+        onnx.save(inferred_model, tmp_path)
+    except Exception:
+        # The caller's try/finally only guards the path returned on success;
+        # if saving fails here the caller never gets tmp_path, so remove the
+        # temp file ourselves before surfacing the error.
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
     return tmp_path
 
 
@@ -144,6 +154,7 @@ def static_quantize(
     config: Optional[QuantizationConfig] = None,
     calibration_samples: int = 100,
     calibration_observations: Optional[np.ndarray] = None,
+    input_name: str = "observation",
 ) -> str:
     """Apply static INT8 quantization with calibration.
 
@@ -159,6 +170,9 @@ def static_quantize(
         calibration_samples: Number of calibration samples.
         calibration_observations: Pre-generated calibration observations.
             If None, random normal observations are used.
+        input_name: Name of the model input the calibration data feeds.
+            Must match the ONNX model's actual input name (e.g. when exported
+            with ``input_names=("obs",)``). Mirrors ``static_quantize_with_dataset``.
 
     Returns:
         Absolute path to quantized model.
@@ -179,6 +193,7 @@ def static_quantize(
         observation_shape=observation_shape,
         num_samples=calibration_samples,
         observations=calibration_observations,
+        input_name=input_name,
     )
 
     activation_type = QuantType.QInt8 if config.activation_type == "int8" else QuantType.QUInt8

@@ -115,6 +115,8 @@ INT8 Dynamic                   0.346      0.188      2892.6     0.00000851   pas
 INT8 Static (Calibrated)       0.410      0.286      2436.7     0.00001319   pass
 ```
 
+> **Throughput (FPS) 口径**: 表中 FPS 为纯推理算力吞吐（仅累计每次 `session.run` 的内部时延），**不含** Python 调度、数据拼装与监控快照等循环开销，因此高于真实端到端链路 FPS，跨模型比较时口径一致。
+
 ## 🖥️ Supported Platforms
 
 | Platform | Monitoring | ONNX Runtime | TensorRT | FP16 | INT8 |
