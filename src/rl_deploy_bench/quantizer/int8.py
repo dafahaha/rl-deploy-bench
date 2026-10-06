@@ -116,7 +116,9 @@ class CalibrationDataReader:
             return None
         obs = self.observations[self.current]
         self.current += 1
-        return {self.input_name: obs}
+        # Calibration samples must carry a leading batch dim: ONNX models
+        # exported with dynamic_axes treat axis 0 as the batch dimension.
+        return {self.input_name: obs[np.newaxis].astype(np.float32)}
 
     def rewind(self):
         self.current = 0
@@ -148,7 +150,7 @@ def static_quantize(
     Returns:
         Absolute path to quantized model.
     """
-    from onnxruntime.quantization import QuantType, quantize_static
+    from onnxruntime.quantization import QuantFormat, QuantType, quantize_static
 
     if config is None:
         config = QuantizationConfig()
@@ -168,20 +170,13 @@ def static_quantize(
 
     activation_type = QuantType.QInt8 if config.activation_type == "int8" else QuantType.QUInt8
     weight_type = QuantType.QInt8 if config.weight_type == "int8" else QuantType.QUInt8
+    quant_format = QuantFormat.QDQ if config.quant_format == "QDQ" else QuantFormat.QOperator
 
     quantize_static(
         model_input=onnx_model_path,
         model_output=output_path,
         calibration_data_reader=reader,
-        quant_format=(
-            getattr(
-                __import__("onnxruntime.quantization", fromlist=["QuantFormat"]), "QuantFormat"
-            ).QDQ
-            if config.quant_format == "QDQ"
-            else getattr(
-                __import__("onnxruntime.quantization", fromlist=["QuantFormat"]), "QuantFormat"
-            ).QOperator
-        ),
+        quant_format=quant_format,
         weight_type=weight_type,
         activation_type=activation_type,
         per_channel=config.per_channel,

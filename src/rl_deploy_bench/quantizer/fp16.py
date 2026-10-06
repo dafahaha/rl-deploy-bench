@@ -64,17 +64,31 @@ def convert_onnx_to_fp16(
 
     # Method 1: Try onnxruntime's float16 converter first (best quality)
     try:
+        import inspect
+
         from onnxruntime.transformers.float16 import convert_float_to_float16
 
-        fp16_model = convert_float_to_float16(
-            model,
-            keep_io_types=config.keep_io_in_fp32,
-            op_blocklist=list(config.op_blocklist),
-        )
+        # onnxruntime renamed the kwarg `op_blocklist` -> `op_block_list` across
+        # versions; pass whichever name this build actually accepts.
+        kwargs: dict = {"keep_io_types": config.keep_io_in_fp32}
+        params = inspect.signature(convert_float_to_float16).parameters
+        if "op_block_list" in params:
+            kwargs["op_block_list"] = list(config.op_blocklist)
+        elif "op_blocklist" in params:
+            kwargs["op_blocklist"] = list(config.op_blocklist)
+
+        fp16_model = convert_float_to_float16(model, **kwargs)
         onnx.save(fp16_model, output_path)
         return os.path.abspath(output_path)
-    except (ImportError, Exception):
-        pass
+    except ImportError:
+        import warnings
+
+        warnings.warn(
+            "onnxruntime.transformers.float16 is unavailable; falling back "
+            "to manual FP16 conversion."
+        )
+    except Exception as e:
+        raise RuntimeError(f"FP16 conversion via onnxruntime failed: {e}") from e
 
     # Method 2: Manual conversion using onnx helper
     # Convert weights to FP16

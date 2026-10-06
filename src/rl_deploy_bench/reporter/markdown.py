@@ -71,19 +71,20 @@ def generate_markdown_report(
     lines.append("## Latency and Throughput Comparison")
     lines.append("")
     lines.append(
-        "| Model | Mean (ms) | P50 (ms) | P95 (ms) | P99 (ms) | "
+        "| Model | Mean (ms) | P50 (ms) | P90 (ms) | P95 (ms) | P99 (ms) | "
         "Min (ms) | Max (ms) | Throughput (FPS) |"
     )
     lines.append(
-        "|-------|-----------|----------|----------|----------|"
+        "|-------|-----------|----------|----------|----------|----------|"
         "----------|----------|------------------|"
     )
 
     for name, result in zip(model_names, benchmark_results):
         lat = result.latency
         lines.append(
-            f"| {name} | {lat.mean_ms:.3f} | {lat.p50_ms:.3f} | {lat.p95_ms:.3f} | "
-            f"{lat.p99_ms:.3f} | {lat.min_ms:.3f} | {lat.max_ms:.3f} | {lat.throughput_fps:.1f} |"
+            f"| {name} | {lat.mean_ms:.3f} | {lat.p50_ms:.3f} | {lat.p90_ms:.3f} | "
+            f"{lat.p95_ms:.3f} | {lat.p99_ms:.3f} | {lat.min_ms:.3f} | "
+            f"{lat.max_ms:.3f} | {lat.throughput_fps:.1f} |"
         )
     lines.append("")
 

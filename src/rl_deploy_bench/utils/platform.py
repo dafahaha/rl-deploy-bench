@@ -94,11 +94,12 @@ def _detect_nvidia_gpu() -> tuple[bool, int, Optional[str]]:
 
 def _detect_jetson() -> bool:
     """Detect if running on NVIDIA Jetson platform."""
-    # Check for Jetson-specific files
+    # Check for Jetson-specific files.
+    # Note: /sys/class/gpio/export is deliberately not used as a signal — it
+    # exists on many non-Jetson Linux systems and produced false positives.
     jetson_indicators = [
         "/etc/nv_tegra_release",
         "/proc/device-tree/compatible",
-        "/sys/class/gpio/export",
     ]
     import os
 

@@ -261,6 +261,9 @@ def benchmark(
     monitor: bool = typer.Option(
         True, "--monitor/--no-monitor", help="Collect system metrics during benchmark"
     ),
+    seed: Optional[int] = typer.Option(
+        None, "--seed", help="RNG seed for synthetic benchmark observations (reproducible)"
+    ),
     output: Optional[str] = typer.Option(
         None, "--output", "-o", help="Output report path (Markdown or HTML)"
     ),
@@ -298,6 +301,7 @@ def benchmark(
         num_runs=num_runs,
         batch_size=batch_size,
         monitor=mon,
+        seed=seed,
     )
 
     # Print results
@@ -388,9 +392,18 @@ def compare(
     orig_bench = benchmark_latency(orig_inf, shape, num_runs=200, num_warmup=30)
     console.print("[cyan]Benchmarking quantized model...[/cyan]")
     quant_bench = benchmark_latency(quant_inf, shape, num_runs=200, num_warmup=30)
+
+    def _pct_change(quant: float, orig: float) -> str:
+        if orig <= 0:
+            return "n/a"
+        return f"{(quant / orig - 1) * 100:+.1f}%"
+
+    orig_throughput = orig_bench.latency.throughput_fps
     throughput_change = (
-        quant_bench.latency.throughput_fps / orig_bench.latency.throughput_fps - 1
-    ) * 100
+        (quant_bench.latency.throughput_fps / orig_throughput - 1) * 100
+        if orig_throughput > 0
+        else float("nan")
+    )
 
     # Size comparison
     size_info = compare_model_sizes(original, quantized)
@@ -405,19 +418,23 @@ def compare(
         "Mean Latency",
         f"{orig_bench.latency.mean_ms:.3f} ms",
         f"{quant_bench.latency.mean_ms:.3f} ms",
-        f"{(quant_bench.latency.mean_ms / orig_bench.latency.mean_ms - 1) * 100:+.1f}%",
+        _pct_change(quant_bench.latency.mean_ms, orig_bench.latency.mean_ms),
     )
     table.add_row(
         "P95 Latency",
         f"{orig_bench.latency.p95_ms:.3f} ms",
         f"{quant_bench.latency.p95_ms:.3f} ms",
-        f"{(quant_bench.latency.p95_ms / orig_bench.latency.p95_ms - 1) * 100:+.1f}%",
+        _pct_change(quant_bench.latency.p95_ms, orig_bench.latency.p95_ms),
     )
+    if throughput_change == throughput_change:  # NaN check
+        throughput_cell = f"{throughput_change:+.1f}%"
+    else:
+        throughput_cell = "n/a"
     table.add_row(
         "Throughput",
         f"{orig_bench.latency.throughput_fps:.1f} FPS",
         f"{quant_bench.latency.throughput_fps:.1f} FPS",
-        f"{throughput_change:+.1f}%",
+        throughput_cell,
     )
     table.add_row(
         "Model Size",
@@ -432,14 +449,25 @@ def compare(
     # Generate report
     if output:
         platform_info = detect_platform()
-        report_path = generate_markdown_report(
-            output,
-            [orig_bench, quant_bench],
-            ["Original (FP32)", "Quantized (INT8)"],
-            accuracy_results=[None, acc_result],  # Original has no accuracy comparison
-            model_paths=[original, quantized],
-            platform_info=platform_info,
-        )
+        if output.endswith(".html"):
+            from .reporter.html import generate_html_report
+
+            report_path = generate_html_report(
+                output,
+                [orig_bench, quant_bench],
+                ["Original (FP32)", "Quantized (INT8)"],
+                accuracy_results=[None, acc_result],
+                platform_info=platform_info,
+            )
+        else:
+            report_path = generate_markdown_report(
+                output,
+                [orig_bench, quant_bench],
+                ["Original (FP32)", "Quantized (INT8)"],
+                accuracy_results=[None, acc_result],  # Original has no accuracy comparison
+                model_paths=[original, quantized],
+                platform_info=platform_info,
+            )
         console.print(f"[green]Report saved:[/green] {report_path}")
 
 

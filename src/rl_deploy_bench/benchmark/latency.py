@@ -55,6 +55,7 @@ def benchmark_latency(
     batch_size: int = 1,
     monitor: Optional[BaseMonitor] = None,
     monitor_interval_ms: float = 100.0,
+    seed: Optional[int] = None,
 ) -> BenchmarkResult:
     """Run latency and throughput benchmark.
 
@@ -66,6 +67,9 @@ def benchmark_latency(
         batch_size: Batch size for inference.
         monitor: Optional system monitor to collect metrics during benchmark.
         monitor_interval_ms: Interval between monitor snapshots in milliseconds.
+        seed: Optional RNG seed for the synthetic benchmark observations. When
+            provided, benchmark runs are reproducible; when None (default), the
+            global numpy RNG is used and behavior is unchanged.
 
     Returns:
         BenchmarkResult with latency stats and system metrics.
@@ -73,8 +77,12 @@ def benchmark_latency(
     # Warmup
     inference.warmup(num_runs=num_warmup, observation_shape=observation_shape)
 
-    # Generate benchmark data
-    observations = np.random.randn(num_runs, batch_size, *observation_shape).astype(np.float32)
+    # Generate benchmark data.
+    if seed is not None:
+        rng = np.random.RandomState(seed)
+        observations = rng.randn(num_runs, batch_size, *observation_shape).astype(np.float32)
+    else:
+        observations = np.random.randn(num_runs, batch_size, *observation_shape).astype(np.float32)
 
     # Start monitor if provided
     if monitor is not None:

@@ -93,6 +93,14 @@ class TensorRTEngine:
         self.input_shape = None
         self.output_name = None
         self._logger = trt.Logger(trt.Logger.WARNING)
+        # Cached device buffers. Allocated lazily on first infer() based on the
+        # actual binding shape, then reused across calls to avoid the very large
+        # per-call cuda.mem_alloc/free overhead that otherwise dominates latency
+        # benchmarking. Freed in close()/__del__.
+        self._d_input = None
+        self._d_output = None
+        self._d_input_nbytes = 0
+        self._d_output_nbytes = 0
 
         if engine_path and os.path.exists(engine_path):
             self.load_engine(engine_path)
@@ -232,19 +240,32 @@ class TensorRTEngine:
         # Set input shape
         self.context.set_input_shape(self.input_name, observation.shape)
 
-        # Allocate device memory
+        # Allocate host output buffer sized for the post-set_input_shape output.
         output_shape = tuple(self.context.get_tensor_shape(self.output_name))
         output = np.empty(output_shape, dtype=np.float32)
 
-        d_input = cuda.mem_alloc(observation.nbytes)
-        d_output = cuda.mem_alloc(output.nbytes)
+        # (Re)allocate device buffers only when size changes; otherwise reuse.
+        # This avoids cuda.mem_alloc/free on every inference, which previously
+        # dominated measured latency and made benchmark numbers meaningless.
+        in_nbytes = observation.nbytes
+        out_nbytes = output.nbytes
+        if self._d_input is None or in_nbytes != self._d_input_nbytes:
+            if self._d_input is not None:
+                self._d_input.free()
+            self._d_input = cuda.mem_alloc(in_nbytes)
+            self._d_input_nbytes = in_nbytes
+        if self._d_output is None or out_nbytes != self._d_output_nbytes:
+            if self._d_output is not None:
+                self._d_output.free()
+            self._d_output = cuda.mem_alloc(out_nbytes)
+            self._d_output_nbytes = out_nbytes
 
         # Copy input to device
-        cuda.memcpy_htod(d_input, observation)
+        cuda.memcpy_htod(self._d_input, observation)
 
         # Set tensor addresses
-        self.context.set_tensor_address(self.input_name, int(d_input))
-        self.context.set_tensor_address(self.output_name, int(d_output))
+        self.context.set_tensor_address(self.input_name, int(self._d_input))
+        self.context.set_tensor_address(self.output_name, int(self._d_output))
 
         # Run inference
         start = time.perf_counter()
@@ -253,13 +274,32 @@ class TensorRTEngine:
         latency_ms = (time.perf_counter() - start) * 1000
 
         # Copy output to host
-        cuda.memcpy_dtoh(output, d_output)
-
-        # Free device memory
-        d_input.free()
-        d_output.free()
+        cuda.memcpy_dtoh(output, self._d_output)
 
         return output, latency_ms
+
+    def close(self) -> None:
+        """Release cached device buffers. Safe to call multiple times."""
+        if self._d_input is not None:
+            try:
+                self._d_input.free()
+            except Exception:
+                pass
+            self._d_input = None
+            self._d_input_nbytes = 0
+        if self._d_output is not None:
+            try:
+                self._d_output.free()
+            except Exception:
+                pass
+            self._d_output = None
+            self._d_output_nbytes = 0
+
+    def __del__(self):  # pragma: no cover - best-effort cleanup
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def get_engine_info(self) -> dict:
         """Get information about the loaded engine."""

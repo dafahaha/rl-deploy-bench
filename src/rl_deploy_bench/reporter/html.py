@@ -6,6 +6,7 @@ distribution histograms, comparison bar charts, and metric tables.
 
 from __future__ import annotations
 
+import html as _html
 import os
 from datetime import datetime
 from typing import List, Optional
@@ -188,7 +189,8 @@ def generate_html_report(
     summary_rows = []
     for name, result in zip(model_names, benchmark_results):
         lat = result.latency
-        row = f"<tr><td>{name}</td><td>{lat.mean_ms:.3f}</td><td>{lat.p50_ms:.3f}</td>"
+        safe_name = _html.escape(str(name))
+        row = f"<tr><td>{safe_name}</td><td>{lat.mean_ms:.3f}</td><td>{lat.p50_ms:.3f}</td>"
         row += f"<td>{lat.p95_ms:.3f}</td><td>{lat.p99_ms:.3f}</td>"
         row += f"<td>{lat.throughput_fps:.1f}</td></tr>"
         summary_rows.append(row)
@@ -196,7 +198,7 @@ def generate_html_report(
     platform_html = ""
     if platform_info is not None:
         gpu_row = (
-            f"<tr><th>GPU</th><td>{platform_info.gpu_name}</td></tr>"
+            f"<tr><th>GPU</th><td>{_html.escape(str(platform_info.gpu_name))}</td></tr>"
             if platform_info.has_nvidia_gpu
             else ""
         )
@@ -204,9 +206,9 @@ def generate_html_report(
         <div class="platform-info">
             <h2>Platform Information</h2>
             <table>
-                <tr><th>OS</th><td>{platform_info.os}</td></tr>
-                <tr><th>Architecture</th><td>{platform_info.arch}</td></tr>
-                <tr><th>Python</th><td>{platform_info.python_version}</td></tr>
+                <tr><th>OS</th><td>{_html.escape(str(platform_info.os))}</td></tr>
+                <tr><th>Architecture</th><td>{_html.escape(str(platform_info.arch))}</td></tr>
+                <tr><th>Python</th><td>{_html.escape(str(platform_info.python_version))}</td></tr>
                 <tr><th>CPU Cores</th><td>{platform_info.cpu_count}</td></tr>
                 <tr><th>Memory</th><td>{platform_info.total_memory_gb} GB</td></tr>
                 {gpu_row}
@@ -219,7 +221,7 @@ def generate_html_report(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title}</title>
+    <title>{_html.escape(title)}</title>
     <style>
         body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
         Roboto, sans-serif; margin: 20px; background: #f5f5f5; }}
@@ -237,7 +239,7 @@ def generate_html_report(
 </head>
 <body>
     <div class="container">
-        <h1>{title}</h1>
+        <h1>{_html.escape(title)}</h1>
         <p><strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
 
         {platform_html}

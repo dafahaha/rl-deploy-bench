@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-07
+
+### Fixed
+- **`static_quantize()` random-calibration path crashed**: `CalibrationDataReader.get_next()` returned observations without a leading batch dimension, which ONNX Runtime's static quantizer rejected with `Invalid rank: Got 1 Expected 2`. Calibration samples now carry the batch dim (`obs[np.newaxis]`), matching `_DatasetReader`.
+- **`verify_onnx_export()` false-failure with action bounds**: the verification-side `OnnxablePolicy` was built without `action_low`/`action_high`, so PyTorch produced raw tanh outputs while the ONNX graph applied the affine unscaling (max diff ~0.43 on Pendulum-style bounds). `verify_onnx_export()` now accepts and applies `action_low`/`action_high`.
+- **CLI `compare --output report.html` wrote Markdown content into a `.html` file**: the `compare` command now branches on the output extension exactly like `benchmark`, producing real HTML when the path ends in `.html`.
+- **ONNX export TracerWarning / broken dynamic batch with action bounds**: `OnnxablePolicy.forward()` contained a Python-level `if low.shape[0] == 1 and action.shape[0] > 1`, which `torch.onnx.export` traced as a constant from the batch=1 dummy input. Bounds are now unconditionally `expand()`ed to the runtime batch size; batch=1 and batch>1 inference both match PyTorch.
+- **HTML report HTML-injection / XSS**: `model_names`, `title`, and `platform_info` strings are now passed through `html.escape()` before being interpolated into the report.
+- **FP16 conversion silently swallowed all exceptions**: `except (ImportError, Exception): pass` masked real converter failures. Now only `ImportError` (converter unavailable) warns and falls back to the manual path; any other converter error is re-raised as `RuntimeError`.
+- **`np.load(allow_pickle=True)` on calibration datasets**: datasets are saved as plain `.npz` arrays; `allow_pickle=False` avoids deserializing arbitrary objects.
+- **CLI `compare` divide-by-zero on degenerate models**: percentage-change cells now render `n/a` when the denominator latency/throughput is zero instead of raising `ZeroDivisionError`.
+
+### Changed
+- `rl_deploy_bench.__version__` is now `1.1.0`, matching `pyproject.toml`.
+- Removed phantom `jinja2` dependency from `dependencies` (HTML reports are f-string generated; Jinja2 was never imported).
+- TensorRT backend now caches and reuses device buffers across `infer()` calls instead of `cuda.mem_alloc`/`free`-ing on every call; buffers are released in `close()`/`__del__`.
+- `benchmark_latency()` accepts an optional `seed` for reproducible benchmark observation data (default behavior unchanged when omitted).
+- Markdown report latency table now includes a P90 column, matching the CLI table and HTML chart.
+- Top-level `rl_deploy_bench` package now re-exports the public Python API (`export_to_onnx`, `dynamic_quantize`, `static_quantize`, `convert_onnx_to_fp16`, `benchmark_latency`, `generate_html_report`, `OnnxRuntimeInference`, etc.) as shown in the README.
+- TorchScript non-ASCII path fallback now copies to a unique temporary file (cleaned up after load) instead of a fixed shared path.
+- Removed the `/sys/class/gpio/export` heuristic from Jetson detection (it exists on many non-Jetson Linux systems).
+
 ## [1.0.0] - 2026-08-31
 
 ### Added

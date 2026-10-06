@@ -64,7 +64,10 @@ class CalibrationDataset:
     @classmethod
     def load(cls, path: str) -> "CalibrationDataset":
         """Load calibration dataset from .npz file."""
-        data = np.load(path, allow_pickle=True)
+        # allow_pickle=False: datasets are saved with np.savez_compressed of plain
+        # numpy arrays / scalars, so pickle is unnecessary and disabling it avoids
+        # deserializing arbitrary objects from an untrusted .npz file.
+        data = np.load(path, allow_pickle=False)
         config = CalibrationConfig(
             num_samples=int(data.get("config_num_samples", len(data["observations"]))),
             collection_strategy=str(data.get("config_strategy", "policy")),

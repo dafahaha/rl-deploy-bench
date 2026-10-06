@@ -106,6 +106,8 @@ class TestModelExport:
         assert result["max_abs_diff"] < 1e-4
 
     def test_export_with_action_bounds(self, policy, obs_shape, tmp_dir):
+        import onnxruntime as ort
+
         from rl_deploy_bench.exporter.onnx_export import export_to_onnx
 
         output_path = os.path.join(tmp_dir, "test_bounds.onnx")
@@ -113,6 +115,66 @@ class TestModelExport:
         high = np.array([2.0, 1.0])
         result = export_to_onnx(policy, obs_shape, output_path, action_low=low, action_high=high)
         assert os.path.exists(result)
+
+        # Numeric assertions (N2): ONNX Runtime outputs must (a) lie within the
+        # requested bounds and (b) match the PyTorch policy that applies the same
+        # tanh->[low, high] unscaling.
+        session = ort.InferenceSession(result, providers=["CPUExecutionProvider"])
+        input_name = session.get_inputs()[0].name
+        obs = np.random.randn(8, *obs_shape).astype(np.float32)
+        onnx_out = session.run(None, {input_name: obs})[0]
+
+        assert np.all(onnx_out >= low - 1e-5), f"output below low: {onnx_out.min(axis=0)}"
+        assert np.all(onnx_out <= high + 1e-5), f"output above high: {onnx_out.max(axis=0)}"
+
+        # PyTorch reference with the same bounds applied.
+        from rl_deploy_bench.exporter.onnx_export import OnnxablePolicy
+
+        wrapped = OnnxablePolicy(policy)
+        wrapped.set_action_bounds(low, high)
+        wrapped.eval()
+        with torch.no_grad():
+            torch_out = wrapped(torch.tensor(obs)).numpy()
+        assert np.allclose(torch_out, onnx_out, atol=1e-4)
+
+    def test_export_with_action_bounds_dynamic_batch(self, policy, obs_shape, tmp_dir):
+        """M4 regression: bounds must expand to the runtime batch size, not be
+        traced from the batch=1 dummy input."""
+        import onnxruntime as ort
+
+        from rl_deploy_bench.exporter.onnx_export import (
+            OnnxablePolicy,
+            export_to_onnx,
+            verify_onnx_export,
+        )
+
+        output_path = os.path.join(tmp_dir, "test_bounds_dyn.onnx")
+        low = np.array([-2.0, -1.0])
+        high = np.array([2.0, 1.0])
+        export_to_onnx(policy, obs_shape, output_path, action_low=low, action_high=high)
+
+        # verify_onnx_export must be told the bounds (M2) and must now pass.
+        verify = verify_onnx_export(
+            output_path, policy, obs_shape, action_low=low, action_high=high
+        )
+        assert bool(verify["passed"]) is True, verify
+        assert verify["max_abs_diff"] < 1e-4
+
+        session = ort.InferenceSession(output_path, providers=["CPUExecutionProvider"])
+        input_name = session.get_inputs()[0].name
+        wrapped = OnnxablePolicy(policy)
+        wrapped.set_action_bounds(low, high)
+        wrapped.eval()
+
+        for batch in (1, 4):
+            obs = np.random.randn(batch, *obs_shape).astype(np.float32)
+            onnx_out = session.run(None, {input_name: obs})[0]
+            with torch.no_grad():
+                torch_out = wrapped(torch.tensor(obs)).numpy()
+            assert onnx_out.shape == (batch, 2)
+            assert np.allclose(torch_out, onnx_out, atol=1e-4), f"batch={batch} mismatch"
+            assert np.all(onnx_out >= low - 1e-5)
+            assert np.all(onnx_out <= high + 1e-5)
 
 
 # ============================================================
@@ -266,6 +328,53 @@ class TestQuantization:
         assert "size_comparison" in result
         assert result["verdict"] in ("pass", "caution", "fail")
 
+    def test_static_quantize_with_random_data(self, policy, obs_shape, tmp_dir):
+        """N3 / M1 regression: static_quantize() with the random calibration
+        path must not crash with 'Invalid rank' and must produce a loadable,
+        runnable INT8 model."""
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer.int8 import static_quantize
+        from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+
+        quantized_path = os.path.join(tmp_dir, "test_static.onnx")
+        quantized_path = static_quantize(
+            onnx_path, obs_shape, quantized_path, calibration_samples=8
+        )
+        assert os.path.exists(quantized_path)
+        assert os.path.getsize(quantized_path) > 0
+
+        inference = OnnxRuntimeInference(quantized_path)
+        obs = np.random.randn(1, *obs_shape).astype(np.float32)
+        result = inference.infer(obs)
+        assert result.actions.shape == (1, 2)
+
+    def test_fp16_conversion_roundtrip(self, policy, obs_shape, tmp_dir):
+        """N6: FP16 conversion must produce a loadable model that runs and
+        stays close to FP32."""
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer.fp16 import convert_onnx_to_fp16
+        from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+        fp16_path = os.path.join(tmp_dir, "test_fp16.onnx")
+        fp16_path = convert_onnx_to_fp16(onnx_path, fp16_path)
+
+        assert os.path.exists(fp16_path)
+        assert os.path.getsize(fp16_path) > 0
+
+        orig = OnnxRuntimeInference(onnx_path)
+        half = OnnxRuntimeInference(fp16_path)
+        obs = np.random.randn(4, *obs_shape).astype(np.float32)
+        a = orig.infer(obs).actions
+        b = half.infer(obs).actions
+        assert b.shape == a.shape
+        # FP16 on CPU keeps IO in FP32; outputs should be very close.
+        assert np.allclose(a, b, atol=1e-2)
+
 
 # ============================================================
 # Report generation tests
@@ -320,6 +429,27 @@ class TestReportGeneration:
             content = f.read()
         assert "<html" in content
         assert "plotly" in content.lower()
+
+    def test_html_report_escapes_model_name_and_title(self, policy, obs_shape, tmp_dir):
+        """S1 regression: user-controlled model names/titles must be HTML-escaped."""
+        from rl_deploy_bench.benchmark.latency import benchmark_latency
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.reporter.html import generate_html_report
+        from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+        inference = OnnxRuntimeInference(onnx_path)
+        result = benchmark_latency(inference, obs_shape, num_warmup=5, num_runs=20)
+
+        report_path = os.path.join(tmp_dir, "report.html")
+        evil = "<script>alert(1)</script>"
+        output = generate_html_report(report_path, [result], [evil], title=evil, platform_info=None)
+        with open(output, "r", encoding="utf-8") as f:
+            content = f.read()
+        # Raw script tag must not appear; the escaped form must.
+        assert "<script>alert(1)</script>" not in content
+        assert "&lt;script&gt;" in content
 
 
 # ============================================================
@@ -379,6 +509,50 @@ class TestCalibrationData:
         assert "min" in stats
         assert "max" in stats
         assert "per_dimension_mean" in stats
+
+
+# ============================================================
+# CLI integration tests
+# ============================================================
+
+
+class TestCLICompare:
+    def test_compare_html_output_is_real_html(self, policy, obs_shape, tmp_dir):
+        """M3 regression: `compare ... --output report.html` must write an HTML
+        document, not Markdown content disguised with a .html suffix."""
+        from typer.testing import CliRunner
+
+        from rl_deploy_bench.cli import app
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer.int8 import dynamic_quantize
+
+        fp32 = os.path.join(tmp_dir, "fp32.onnx")
+        export_to_onnx(policy, obs_shape, fp32)
+        quant = dynamic_quantize(fp32, os.path.join(tmp_dir, "quant.onnx"))
+
+        runner = CliRunner()
+        report = os.path.join(tmp_dir, "report.html")
+        result = runner.invoke(
+            app,
+            [
+                "compare",
+                fp32,
+                quant,
+                "--obs-shape",
+                ",".join(str(s) for s in obs_shape),
+                "--num-samples",
+                "20",
+                "--output",
+                report,
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert os.path.exists(report)
+        with open(report, "r", encoding="utf-8") as f:
+            content = f.read()
+        assert content.lstrip().lower().startswith("<!doctype html") or "<html" in content
+        # A real HTML report contains plotly; a markdown report would not.
+        assert "plotly" in content.lower()
 
 
 # ============================================================

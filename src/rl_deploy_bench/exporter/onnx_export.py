@@ -66,12 +66,12 @@ class OnnxablePolicy(nn.Module):
 
         # Unscale actions if bounds are set (tanh output in [-1, 1] -> [low, high])
         if self._normalize:
-            low = self._action_low
-            high = self._action_high
-            # Expand bounds to match batch size
-            if low.shape[0] == 1 and action.shape[0] > 1:
-                low = low.expand(action.shape[0], -1)
-                high = high.expand(action.shape[0], -1)
+            # Always expand bounds to match the runtime batch size. Using a
+            # Python-level `if low.shape[0] == 1` here would be traced as a
+            # constant by torch.onnx.export (dummy input uses batch=1), which
+            # would hard-code that branch into the graph and break batch>1.
+            low = self._action_low.expand(action.shape[0], -1)
+            high = self._action_high.expand(action.shape[0], -1)
             action = low + (action + 1.0) * 0.5 * (high - low)
             action = torch.clamp(action, low, high)
 
@@ -142,6 +142,8 @@ def verify_onnx_export(
     policy: nn.Module,
     observation_shape: Sequence[int],
     atol: float = 1e-4,
+    action_low: Optional[np.ndarray] = None,
+    action_high: Optional[np.ndarray] = None,
 ) -> dict:
     """Verify that ONNX export matches PyTorch output.
 
@@ -150,6 +152,11 @@ def verify_onnx_export(
         policy: Original PyTorch policy.
         observation_shape: Shape of a single observation.
         atol: Absolute tolerance for comparison.
+        action_low: Lower action bounds passed to ``export_to_onnx``. Must be
+            provided together with ``action_high`` so the verification-side
+            ``OnnxablePolicy`` applies the same tanh-unscaling as the exported
+            graph; otherwise the two sides differ by the affine transform.
+        action_high: Upper action bounds passed to ``export_to_onnx``.
 
     Returns:
         Dictionary with verification results.
@@ -158,6 +165,8 @@ def verify_onnx_export(
 
     # PyTorch inference
     onnxable = OnnxablePolicy(policy)
+    if action_low is not None and action_high is not None:
+        onnxable.set_action_bounds(action_low, action_high)
     onnxable.eval()
     dummy_input = torch.randn(1, *observation_shape, dtype=torch.float32)
 
@@ -175,7 +184,7 @@ def verify_onnx_export(
     passed = max_diff < atol
 
     return {
-        "passed": passed,
+        "passed": bool(passed),
         "max_abs_diff": float(max_diff),
         "mean_abs_diff": float(mean_diff),
         "tolerance": atol,

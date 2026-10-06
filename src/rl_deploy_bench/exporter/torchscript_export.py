@@ -89,18 +89,27 @@ def _safe_load_torchscript(model_path: str):
 
     PyTorch's torch.jit.load has issues with non-ASCII paths on Windows.
     This helper copies the file to a temp directory with an ASCII name if needed.
+    The temp file is uniquely named (so concurrent loads don't clobber each
+    other) and removed as soon as torch.jit.load has consumed it.
     """
     try:
         return torch.jit.load(model_path)
     except RuntimeError as e:
         if "No such file or directory" in str(e) and any(ord(c) > 127 for c in model_path):
-            # Path contains non-ASCII characters, copy to temp dir
+            # Path contains non-ASCII characters, copy to a unique temp file.
             import shutil
             import tempfile
 
-            tmp_path = os.path.join(tempfile.gettempdir(), "rl_deploy_bench_ts_model.pt")
-            shutil.copy2(model_path, tmp_path)
-            return torch.jit.load(tmp_path)
+            fd, tmp_path = tempfile.mkstemp(prefix="rl_deploy_bench_ts_", suffix=".pt")
+            os.close(fd)
+            try:
+                shutil.copy2(model_path, tmp_path)
+                return torch.jit.load(tmp_path)
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
         raise
 
 
