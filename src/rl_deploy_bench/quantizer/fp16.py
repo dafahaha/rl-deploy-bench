@@ -191,6 +191,7 @@ def evaluate_fp16_impact(
     observation_shape: Sequence[int],
     num_samples: int = 500,
     mse_threshold: float = 0.01,
+    cosine_threshold: float = 0.99,
 ) -> dict:
     """Evaluate the impact of FP16 conversion on action accuracy.
 
@@ -200,6 +201,9 @@ def evaluate_fp16_impact(
         observation_shape: Shape of a single observation.
         num_samples: Number of test samples.
         mse_threshold: Maximum acceptable action MSE.
+        cosine_threshold: Minimum acceptable action cosine similarity. Defaults
+            to 0.99, matching ``evaluate_quantization`` so the two evaluators
+            share the same pass/fail semantics.
 
     Returns:
         Dictionary with evaluation results and recommendation.
@@ -225,7 +229,7 @@ def evaluate_fp16_impact(
     size_info = compare_model_sizes(original_model_path, fp16_model_path)
 
     mse_ok = acc.action_mse < mse_threshold
-    cosine_ok = acc.action_cosine_similarity > 0.99
+    cosine_ok = acc.action_cosine_similarity > cosine_threshold
 
     if mse_ok and cosine_ok:
         verdict = "pass"
@@ -262,6 +266,9 @@ def evaluate_fp16_impact(
         "relative_error": acc.action_relative_error,
         "per_dimension_mse": acc.per_dimension_mse,
         "mse_threshold": mse_threshold,
+        "cosine_threshold": cosine_threshold,
+        "mse_within_threshold": mse_ok,
+        "cosine_within_threshold": cosine_ok,
         "size_comparison": size_info,
         "num_test_samples": num_samples,
     }

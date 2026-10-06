@@ -174,6 +174,36 @@ from rl_deploy_bench.quantizer import dynamic_quantize
 quantized_path = dynamic_quantize("model.onnx")
 ```
 
+### `static_quantize(onnx_model_path, observation_shape, output_path=None, config=None, calibration_samples=100, calibration_observations=None, input_name="observation") -> str`
+
+Apply static INT8 quantization using **synthetic calibration data**.
+
+This is the convenient alternative to `static_quantize_with_dataset`: when you
+do not have environment rollouts on hand, it synthesizes `calibration_samples`
+random Gaussian observations (or uses `calibration_observations` when supplied)
+to estimate activation ranges. For best accuracy on RL policies prefer
+`static_quantize_with_dataset` with observations collected from the real
+environment — random noise is only a stand-in.
+
+`input_name` must match the ONNX model's actual input name. The exporter's
+default input name is `"observation"`, which is also this parameter's default.
+If the model was exported with a custom name (e.g.
+`ExportConfig(input_names=("obs",))`), pass the same name here; a mismatch
+surfaces as an onnxruntime "missing inputs" error during calibration rather
+than at quantization time.
+
+```python
+from rl_deploy_bench.quantizer import static_quantize
+
+quantized_path = static_quantize(
+    "model.onnx", observation_shape=(4,), calibration_samples=100
+)
+# A model exported with input name "obs" must calibrate against "obs":
+quantized_path = static_quantize(
+    "model.onnx", observation_shape=(4,), input_name="obs"
+)
+```
+
 ### `static_quantize_with_dataset(onnx_model_path, calibration_dataset, output_path=None, config=None, input_name="observation") -> str`
 
 Apply static INT8 quantization with calibration data from a CalibrationDataset.

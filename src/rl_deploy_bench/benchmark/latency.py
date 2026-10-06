@@ -98,27 +98,37 @@ def benchmark_latency(
         system_metrics: List[SystemMetrics] = []
         last_monitor_time = time.time()
 
-    # Run benchmark
+    # Run benchmark. The whole loop (inference + interval snapshots) sits in a
+    # try/finally so that monitor.stop() is guaranteed to run even if
+    # inference.infer() or an interval snapshot raises mid-benchmark. Without
+    # it, a GPU monitor whose handle dies between snapshots would leak its
+    # underlying handles (e.g. NVML shutdown never happens).
     latencies = []
-    for i in range(num_runs):
-        result = inference.infer(observations[i])
-        latencies.append(result.latency_ms)
+    try:
+        for i in range(num_runs):
+            result = inference.infer(observations[i])
+            latencies.append(result.latency_ms)
 
-        # Collect monitor metrics at intervals
+            # Collect monitor metrics at intervals. An interval snapshot failure
+            # is best-effort: drop that sample rather than aborting the run,
+            # symmetric with the final snapshot guarded below.
+            if monitor is not None:
+                current_time = time.time()
+                if (current_time - last_monitor_time) * 1000 >= monitor_interval_ms:
+                    try:
+                        system_metrics.append(monitor.snapshot())
+                    except Exception:
+                        pass
+                    last_monitor_time = current_time
+    finally:
+        # Stop monitor
         if monitor is not None:
-            current_time = time.time()
-            if (current_time - last_monitor_time) * 1000 >= monitor_interval_ms:
+            # Final snapshot
+            try:
                 system_metrics.append(monitor.snapshot())
-                last_monitor_time = current_time
-
-    # Stop monitor
-    if monitor is not None:
-        # Final snapshot
-        try:
-            system_metrics.append(monitor.snapshot())
-        except Exception:
-            pass
-        monitor.stop()
+            except Exception:
+                pass
+            monitor.stop()
 
     # Compute statistics
     latencies_arr = np.array(latencies)

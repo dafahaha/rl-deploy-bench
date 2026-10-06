@@ -20,8 +20,11 @@ def _shape_inferred_temp_model(onnx_model_path: str) -> str:
     onnxruntime's quantizers emit "Please consider to run pre-processing before
     quantization" (and can hit internal errors on some ops) when the input graph
     lacks inferred value-info shapes. Running shape inference up front and feeding
-    the annotated graph to the quantizer removes that warning; all quantization
-    entry points share this preprocessing so their behavior stays consistent.
+    the annotated graph to the quantizer resolves those internal errors and
+    suppresses the warning in the common case; onnxruntime may still log the
+    pre-processing notice on some graphs even after inference, so callers should
+    not treat that warning as fatal. All quantization entry points share this
+    preprocessing so their behavior stays consistent.
 
     Returns the path to a temp ONNX file. The caller owns deleting it.
     """
@@ -201,7 +204,7 @@ def static_quantize(
     quant_format = QuantFormat.QDQ if config.quant_format == "QDQ" else QuantFormat.QOperator
 
     # Pre-run shape inference so the random-calibration path matches the dataset
-    # path and avoids onnxruntime's "pre-processing" warning.
+    # path and reduces onnxruntime's "pre-processing" warnings (see helper).
     tmp_path = _shape_inferred_temp_model(onnx_model_path)
     try:
         quantize_static(

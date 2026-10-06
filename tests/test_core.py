@@ -265,6 +265,107 @@ class TestLatencyBenchmark:
         with pytest.raises(ValueError):
             benchmark_latency(object(), obs_shape, num_warmup=0, num_runs=0)
 
+    def test_benchmark_monitor_snapshot_failure_still_stops_monitor(self, obs_shape):
+        """R4-建议-1: if an interval monitor.snapshot() raises, the benchmark
+        must not skip monitor.stop() (which releases NVML/Jetson handles).
+        Snapshot errors are best-effort: that sample is dropped and the run
+        still completes."""
+        from types import SimpleNamespace
+
+        from rl_deploy_bench.benchmark.latency import benchmark_latency
+        from rl_deploy_bench.monitor.base import BaseMonitor
+
+        class _FakeInference:
+            def warmup(self, num_runs, observation_shape):
+                pass
+
+            def infer(self, obs):
+                result = SimpleNamespace()
+                result.latency_ms = 1.0
+                return result
+
+            def get_provider_info(self):
+                return {}
+
+        class _ExplodingMonitor(BaseMonitor):
+            def __init__(self):
+                self.stopped = False
+
+            def start(self):
+                pass
+
+            def stop(self):
+                self.stopped = True
+
+            def snapshot(self):
+                raise RuntimeError("snapshot blew up")
+
+        monitor = _ExplodingMonitor()
+        result = benchmark_latency(
+            _FakeInference(),
+            obs_shape,
+            num_warmup=0,
+            num_runs=3,
+            monitor=monitor,
+            monitor_interval_ms=0.0,
+        )
+        # The run completed despite every interval (and final) snapshot failing.
+        assert len(result.latency.latencies_ms) == 3
+        # Crucially: stop() was still called even though snapshots blew up.
+        assert monitor.stopped is True
+
+    def test_benchmark_stops_monitor_when_infer_raises(self, obs_shape):
+        """R4-建议-1: the try/finally must release the monitor even when
+        inference.infer() raises mid-benchmark; the error still propagates."""
+        from types import SimpleNamespace
+
+        from rl_deploy_bench.benchmark.latency import benchmark_latency
+        from rl_deploy_bench.monitor.base import BaseMonitor
+
+        class _ExplodingInference:
+            def __init__(self):
+                self.calls = 0
+
+            def warmup(self, num_runs, observation_shape):
+                pass
+
+            def infer(self, obs):
+                self.calls += 1
+                if self.calls == 2:
+                    raise RuntimeError("infer blew up")
+                result = SimpleNamespace()
+                result.latency_ms = 1.0
+                return result
+
+            def get_provider_info(self):
+                return {}
+
+        class _RecordingMonitor(BaseMonitor):
+            def __init__(self):
+                self.stopped = False
+
+            def start(self):
+                pass
+
+            def stop(self):
+                self.stopped = True
+
+            def snapshot(self):
+                return SimpleNamespace()
+
+        monitor = _RecordingMonitor()
+        with pytest.raises(RuntimeError, match="infer blew up"):
+            benchmark_latency(
+                _ExplodingInference(),
+                obs_shape,
+                num_warmup=0,
+                num_runs=5,
+                monitor=monitor,
+                monitor_interval_ms=0.0,
+            )
+        # Error propagated, but the monitor was still stopped.
+        assert monitor.stopped is True
+
 
 # ============================================================
 # Accuracy comparison tests
@@ -495,6 +596,31 @@ class TestQuantization:
 
         msgs = [str(w.message) for w in caught]
         assert any("op_blocklist" in m and "ignored" in m for m in msgs), msgs
+
+    def test_evaluate_fp16_impact_respects_cosine_threshold(self, policy, obs_shape, tmp_dir):
+        """R4-建议-3: evaluate_fp16_impact must expose cosine_threshold (matching
+        evaluate_quantization) and actually consult it when gating the verdict,
+        instead of hardcoding 0.99."""
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer.fp16 import convert_onnx_to_fp16, evaluate_fp16_impact
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+        fp16_path = convert_onnx_to_fp16(onnx_path, os.path.join(tmp_dir, "test_fp16.onnx"))
+
+        # Default gate: FP16 keeps IO in FP32, so cosine similarity is very high.
+        default = evaluate_fp16_impact(onnx_path, fp16_path, obs_shape, num_samples=32)
+        assert default["cosine_threshold"] == 0.99
+        assert default["cosine_within_threshold"] is True
+
+        # An impossible cosine threshold must flip only the cosine gate, leaving
+        # the MSE gate unchanged for the same model pair.
+        strict = evaluate_fp16_impact(
+            onnx_path, fp16_path, obs_shape, num_samples=32, cosine_threshold=1.5
+        )
+        assert strict["cosine_threshold"] == 1.5
+        assert strict["cosine_within_threshold"] is False
+        assert strict["mse_within_threshold"] is default["mse_within_threshold"]
 
 
 # ============================================================
