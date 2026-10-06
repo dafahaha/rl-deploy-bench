@@ -68,7 +68,9 @@ def main():
             env.close()
             print(f"  Model saved: {model_path}")
     except ImportError:
-        print("  stable-baselines3 not installed. Install with: pip install stable-baselines3 gymnasium")
+        print(
+            "  stable-baselines3 not installed. Install with: pip install stable-baselines3 gymnasium"
+        )
         print("  Skipping training, using a dummy model for demonstration...")
         model = None
 
@@ -99,8 +101,10 @@ def main():
     int8_path = dynamic_quantize(onnx_path, int8_path)
     print(f"  Quantized: {int8_path}")
     size_info = compare_model_sizes(onnx_path, int8_path)
-    print(f"  Size: {size_info['quantized_size_mb']:.2f} MB "
-          f"(-{size_info['size_reduction_pct']:.1f}%, {size_info['compression_ratio']:.2f}x compression)")
+    print(
+        f"  Size: {size_info['quantized_size_mb']:.2f} MB "
+        f"(-{size_info['size_reduction_pct']:.1f}%, {size_info['compression_ratio']:.2f}x compression)"
+    )
 
     # Step 4: Benchmark both models
     print("\n[Step 4] Benchmarking FP32 model...")
@@ -123,9 +127,7 @@ def main():
 
     print("\n  Benchmarking INT8 model...")
     int8_inf = OnnxRuntimeInference(int8_path)
-    int8_bench = benchmark_latency(
-        int8_inf, obs_shape, num_warmup=50, num_runs=500, monitor=None
-    )
+    int8_bench = benchmark_latency(int8_inf, obs_shape, num_warmup=50, num_runs=500, monitor=None)
     print(f"  Mean latency: {int8_bench.latency.mean_ms:.3f} ms")
     print(f"  P95 latency: {int8_bench.latency.p95_ms:.3f} ms")
     print(f"  Throughput: {int8_bench.latency.throughput_fps:.1f} FPS")
@@ -179,10 +181,16 @@ def main():
     print(f"  Model: PPO on {env_name}")
     print(f"  Observation shape: {obs_shape}")
     print(f"  FP32 size: {size_info['original_size_mb']:.2f} MB")
-    print(f"  INT8 size: {size_info['quantized_size_mb']:.2f} MB "
-          f"(-{size_info['size_reduction_pct']:.1f}%)")
-    print(f"  FP32 latency: {fp32_bench.latency.mean_ms:.3f} ms (P95: {fp32_bench.latency.p95_ms:.3f} ms)")
-    print(f"  INT8 latency: {int8_bench.latency.mean_ms:.3f} ms (P95: {int8_bench.latency.p95_ms:.3f} ms)")
+    print(
+        f"  INT8 size: {size_info['quantized_size_mb']:.2f} MB "
+        f"(-{size_info['size_reduction_pct']:.1f}%)"
+    )
+    print(
+        f"  FP32 latency: {fp32_bench.latency.mean_ms:.3f} ms (P95: {fp32_bench.latency.p95_ms:.3f} ms)"
+    )
+    print(
+        f"  INT8 latency: {int8_bench.latency.mean_ms:.3f} ms (P95: {int8_bench.latency.p95_ms:.3f} ms)"
+    )
     print(f"  Action MSE (INT8 vs FP32): {acc_result.action_mse:.6f}")
     print(f"  Reports: {report_md}, {report_html}")
     print("=" * 60)

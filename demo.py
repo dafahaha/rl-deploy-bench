@@ -24,6 +24,8 @@ import torch
 import torch.nn as nn
 
 from rl_deploy_bench import __version__
+from rl_deploy_bench.benchmark.accuracy import compare_actions, generate_test_observations
+from rl_deploy_bench.benchmark.latency import benchmark_latency
 from rl_deploy_bench.exporter import export_to_onnx, export_to_torchscript
 from rl_deploy_bench.quantizer import (
     convert_onnx_to_fp16,
@@ -31,23 +33,26 @@ from rl_deploy_bench.quantizer import (
     evaluate_fp16_impact,
     evaluate_quantization,
 )
-from rl_deploy_bench.benchmark.latency import benchmark_latency
-from rl_deploy_bench.benchmark.accuracy import compare_actions, generate_test_observations
-from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
-from rl_deploy_bench.reporter.markdown import generate_markdown_report
 from rl_deploy_bench.reporter.html import generate_html_report
+from rl_deploy_bench.reporter.markdown import generate_markdown_report
+from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
 from rl_deploy_bench.utils.platform import detect_platform
 
 
 class DemoPolicy(nn.Module):
     """Simple RL policy for demonstration (4-dim obs, 2-dim action)."""
+
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(4, 128), nn.ReLU(),
-            nn.Linear(128, 64), nn.ReLU(),
-            nn.Linear(64, 2), nn.Tanh(),
+            nn.Linear(4, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, 2),
+            nn.Tanh(),
         )
+
     def forward(self, x):
         return self.net(x)
 
@@ -95,15 +100,19 @@ def main():
 
     fp16_path = convert_onnx_to_fp16(onnx_path, os.path.join(output_dir, "policy_fp16.onnx"))
     fp16_eval = evaluate_fp16_impact(onnx_path, fp16_path, obs_shape, num_samples=200)
-    print(f"  FP16: {os.path.getsize(fp16_path):,} bytes, "
-          f"MSE={fp16_eval['action_mse']:.2e}, "
-          f"verdict={fp16_eval['verdict']}")
+    print(
+        f"  FP16: {os.path.getsize(fp16_path):,} bytes, "
+        f"MSE={fp16_eval['action_mse']:.2e}, "
+        f"verdict={fp16_eval['verdict']}"
+    )
 
     int8_path = dynamic_quantize(onnx_path, os.path.join(output_dir, "policy_int8.onnx"))
     int8_eval = evaluate_quantization(onnx_path, int8_path, obs_shape, num_samples=200)
-    print(f"  INT8: {os.path.getsize(int8_path):,} bytes, "
-          f"MSE={int8_eval['action_mse']:.2e}, "
-          f"verdict={int8_eval['verdict']}")
+    print(
+        f"  INT8: {os.path.getsize(int8_path):,} bytes, "
+        f"MSE={int8_eval['action_mse']:.2e}, "
+        f"verdict={int8_eval['verdict']}"
+    )
 
     # Step 4: Benchmark all models
     print_header("Step 4: Benchmark Latency & Throughput")
@@ -120,9 +129,11 @@ def main():
         inferences.append(inf)
         result = benchmark_latency(inf, obs_shape, num_warmup=20, num_runs=200)
         results.append(result)
-        print(f"  {name:6s}: mean={result.latency.mean_ms:.3f}ms, "
-              f"P95={result.latency.p95_ms:.3f}ms, "
-              f"FPS={result.latency.throughput_fps:,.0f}")
+        print(
+            f"  {name:6s}: mean={result.latency.mean_ms:.3f}ms, "
+            f"P95={result.latency.p95_ms:.3f}ms, "
+            f"FPS={result.latency.throughput_fps:,.0f}"
+        )
 
     # Step 5: Accuracy comparison
     print_header("Step 5: Accuracy Comparison (vs FP32)")
@@ -134,9 +145,11 @@ def main():
         quant_actions = np.array([inferences[i].infer(o).actions[0] for o in test_obs])
         acc = compare_actions(fp32_actions, quant_actions, test_obs)
         accuracy_results.append(acc)
-        print(f"  {models[i][0]:6s}: MSE={acc.action_mse:.2e}, "
-              f"Cosine={acc.action_cosine_similarity:.6f}, "
-              f"MaxErr={acc.action_max_error:.6f}")
+        print(
+            f"  {models[i][0]:6s}: MSE={acc.action_mse:.2e}, "
+            f"Cosine={acc.action_cosine_similarity:.6f}, "
+            f"MaxErr={acc.action_max_error:.6f}"
+        )
 
     # Step 6: Generate reports
     print_header("Step 6: Generate Reports")
@@ -145,7 +158,9 @@ def main():
 
     md_path = os.path.join(output_dir, "demo_report.md")
     md_path = generate_markdown_report(
-        md_path, results, model_names,
+        md_path,
+        results,
+        model_names,
         accuracy_results=accuracy_results,
         model_paths=model_paths,
         platform_info=platform,
@@ -155,7 +170,9 @@ def main():
 
     html_path = os.path.join(output_dir, "demo_report.html")
     html_path = generate_html_report(
-        html_path, results, model_names,
+        html_path,
+        results,
+        model_names,
         accuracy_results=accuracy_results,
         platform_info=platform,
         title="RL-Deploy-Bench Demo Report",

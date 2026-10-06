@@ -29,23 +29,23 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+from rl_deploy_bench.benchmark.accuracy import compare_actions, generate_test_observations
 from rl_deploy_bench.benchmark.calibration import (
-    EnvironmentCalibrationGenerator,
     CalibrationConfig,
+    EnvironmentCalibrationGenerator,
 )
 from rl_deploy_bench.benchmark.latency import benchmark_latency
-from rl_deploy_bench.benchmark.accuracy import compare_actions, generate_test_observations
-from rl_deploy_bench.quantizer.int8 import (
-    dynamic_quantize,
-    static_quantize_with_dataset,
-    evaluate_quantization,
-    compare_model_sizes,
-)
+from rl_deploy_bench.exporter.onnx_export import export_to_onnx
 from rl_deploy_bench.quantizer.fp16 import (
     convert_onnx_to_fp16,
     evaluate_fp16_impact,
     get_fp16_supported_gpus,
+)
+from rl_deploy_bench.quantizer.int8 import (
+    compare_model_sizes,
+    dynamic_quantize,
+    evaluate_quantization,
+    static_quantize_with_dataset,
 )
 from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
 from rl_deploy_bench.utils.platform import detect_platform
@@ -53,13 +53,18 @@ from rl_deploy_bench.utils.platform import detect_platform
 
 class PendulumPolicy(nn.Module):
     """PPO-style policy for Pendulum-v1."""
+
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(3, 128), nn.ReLU(),
-            nn.Linear(128, 64), nn.ReLU(),
-            nn.Linear(64, 1), nn.Tanh(),
+            nn.Linear(3, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1),
+            nn.Tanh(),
         )
+
     def forward(self, x):
         return self.net(x) * 2.0
 
@@ -122,19 +127,25 @@ def main():
     print(f"  Verdict: {fp16_result['verdict'].upper()}")
     print(f"  Action MSE: {fp16_result['action_mse']:.10f}")
     print(f"  Cosine Similarity: {fp16_result['cosine_similarity']:.8f}")
-    print(f"  Size: {fp16_result['size_comparison']['quantized_size_mb']:.3f} MB "
-          f"(-{fp16_result['size_comparison']['size_reduction_pct']:.1f}%)")
+    print(
+        f"  Size: {fp16_result['size_comparison']['quantized_size_mb']:.3f} MB "
+        f"(-{fp16_result['size_comparison']['size_reduction_pct']:.1f}%)"
+    )
 
     fp16_inf = OnnxRuntimeInference(fp16_path)
     fp16_bench = benchmark_latency(fp16_inf, obs_shape, num_warmup=30, num_runs=300)
-    print(f"  FP16 Mean Latency: {fp16_bench.latency.mean_ms:.3f} ms "
-          f"({(fp16_bench.latency.mean_ms / fp32_bench.latency.mean_ms - 1) * 100:+.1f}% vs FP32)")
+    print(
+        f"  FP16 Mean Latency: {fp16_bench.latency.mean_ms:.3f} ms "
+        f"({(fp16_bench.latency.mean_ms / fp32_bench.latency.mean_ms - 1) * 100:+.1f}% vs FP32)"
+    )
 
     # ============================================================
     # Step 3: INT8 Dynamic Quantization
     # ============================================================
     print_section("Step 3: INT8 Dynamic Quantization")
-    int8_dyn_path = dynamic_quantize(fp32_path, os.path.join(output_dir, "decision_int8_dynamic.onnx"))
+    int8_dyn_path = dynamic_quantize(
+        fp32_path, os.path.join(output_dir, "decision_int8_dynamic.onnx")
+    )
     print(f"  Dynamic INT8: {int8_dyn_path}")
 
     dyn_result = evaluate_quantization(fp32_path, int8_dyn_path, obs_shape, num_samples=300)
@@ -179,16 +190,38 @@ def main():
 
     results = [
         ("FP32 (Baseline)", fp32_bench, None, 1.0, "Reference"),
-        ("FP16", fp16_bench, fp16_result, fp16_result['size_comparison']['compression_ratio'], fp16_result['verdict']),
-        ("INT8 Dynamic", dyn_bench, dyn_result, dyn_result['size_comparison']['compression_ratio'], dyn_result['verdict']),
-        ("INT8 Static (Calibrated)", static_bench, static_result, static_result['size_comparison']['compression_ratio'], static_result['verdict']),
+        (
+            "FP16",
+            fp16_bench,
+            fp16_result,
+            fp16_result["size_comparison"]["compression_ratio"],
+            fp16_result["verdict"],
+        ),
+        (
+            "INT8 Dynamic",
+            dyn_bench,
+            dyn_result,
+            dyn_result["size_comparison"]["compression_ratio"],
+            dyn_result["verdict"],
+        ),
+        (
+            "INT8 Static (Calibrated)",
+            static_bench,
+            static_result,
+            static_result["size_comparison"]["compression_ratio"],
+            static_result["verdict"],
+        ),
     ]
 
-    print(f"\n  {'Model':<28} {'Latency(ms)':<12} {'FPS':<10} {'MSE':<14} {'Size Ratio':<12} {'Verdict'}")
+    print(
+        f"\n  {'Model':<28} {'Latency(ms)':<12} {'FPS':<10} {'MSE':<14} {'Size Ratio':<12} {'Verdict'}"
+    )
     print(f"  {'-'*90}")
     for name, bench, acc, ratio, verdict in results:
         mse = f"{acc['action_mse']:.2e}" if acc else "0 (baseline)"
-        print(f"  {name:<28} {bench.latency.mean_ms:<12.3f} {bench.latency.throughput_fps:<10.1f} {mse:<14} {ratio:<12.2f}x {verdict}")
+        print(
+            f"  {name:<28} {bench.latency.mean_ms:<12.3f} {bench.latency.throughput_fps:<10.1f} {mse:<14} {ratio:<12.2f}x {verdict}"
+        )
 
     # Decision logic
     print("\n  Recommendation:")
@@ -203,14 +236,20 @@ def main():
 
     if best:
         print(f"  -> RECOMMENDED: {best[0]}")
-        print(f"     - Latency: {best[1].latency.mean_ms:.3f} ms "
-              f"({(best[1].latency.mean_ms / fp32_bench.latency.mean_ms - 1) * 100:+.1f}% vs FP32)")
-        print(f"     - Accuracy: MSE={best[2]['action_mse']:.2e}, "
-              f"Cosine={best[2]['cosine_similarity']:.6f}")
+        print(
+            f"     - Latency: {best[1].latency.mean_ms:.3f} ms "
+            f"({(best[1].latency.mean_ms / fp32_bench.latency.mean_ms - 1) * 100:+.1f}% vs FP32)"
+        )
+        print(
+            f"     - Accuracy: MSE={best[2]['action_mse']:.2e}, "
+            f"Cosine={best[2]['cosine_similarity']:.6f}"
+        )
         print(f"     - Size: {best[3]:.2f}x compression")
     else:
         print("  -> RECOMMENDED: FP32 (no quantized variant meets accuracy threshold)")
-        print("     - Consider: more calibration data, selective quantization, or FP16 with op_blocklist")
+        print(
+            "     - Consider: more calibration data, selective quantization, or FP16 with op_blocklist"
+        )
 
     print("\n  Decision Rules:")
     print("    1. Always try FP16 first - near-lossless, good GPU speedup")
