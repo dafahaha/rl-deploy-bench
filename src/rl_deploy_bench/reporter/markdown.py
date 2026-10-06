@@ -10,8 +10,6 @@ import os
 from datetime import datetime
 from typing import List, Optional
 
-import numpy as np
-
 from ..benchmark.accuracy import AccuracyComparisonResult
 from ..benchmark.latency import BenchmarkResult
 from ..quantizer.int8 import compare_model_sizes
@@ -56,8 +54,8 @@ def generate_markdown_report(
     if platform_info is not None:
         lines.append("## Platform Information")
         lines.append("")
-        lines.append(f"| Property | Value |")
-        lines.append(f"|----------|-------|")
+        lines.append("| Property | Value |")
+        lines.append("|----------|-------|")
         lines.append(f"| OS | {platform_info.os} |")
         lines.append(f"| Architecture | {platform_info.arch} |")
         lines.append(f"| Python | {platform_info.python_version} |")
@@ -66,14 +64,20 @@ def generate_markdown_report(
         if platform_info.has_nvidia_gpu:
             lines.append(f"| GPU | {platform_info.gpu_name} (x{platform_info.gpu_count}) |")
         if platform_info.is_jetson:
-            lines.append(f"| Platform | NVIDIA Jetson |")
+            lines.append("| Platform | NVIDIA Jetson |")
         lines.append("")
 
     # Latency comparison table
     lines.append("## Latency and Throughput Comparison")
     lines.append("")
-    lines.append("| Model | Mean (ms) | P50 (ms) | P95 (ms) | P99 (ms) | Min (ms) | Max (ms) | Throughput (FPS) |")
-    lines.append("|-------|-----------|----------|----------|----------|----------|----------|------------------|")
+    lines.append(
+        "| Model | Mean (ms) | P50 (ms) | P95 (ms) | P99 (ms) | "
+        "Min (ms) | Max (ms) | Throughput (FPS) |"
+    )
+    lines.append(
+        "|-------|-----------|----------|----------|----------|"
+        "----------|----------|------------------|"
+    )
 
     for name, result in zip(model_names, benchmark_results):
         lat = result.latency
@@ -91,10 +95,22 @@ def generate_markdown_report(
         lines.append("| Model | GPU Util (%) | GPU Power (W) | GPU Memory (MB) | CPU Util (%) |")
         lines.append("|-------|-------------|---------------|-----------------|-------------|")
         for name, result in zip(model_names, benchmark_results):
-            gpu_util = f"{result.avg_gpu_utilization:.1f}" if result.avg_gpu_utilization is not None else "N/A"
-            gpu_power = f"{result.avg_gpu_power_w:.2f}" if result.avg_gpu_power_w is not None else "N/A"
-            gpu_mem = f"{result.avg_gpu_memory_mb:.1f}" if result.avg_gpu_memory_mb is not None else "N/A"
-            cpu_util = f"{result.avg_cpu_utilization:.1f}" if result.avg_cpu_utilization is not None else "N/A"
+            gpu_util = (
+                f"{result.avg_gpu_utilization:.1f}"
+                if result.avg_gpu_utilization is not None
+                else "N/A"
+            )
+            gpu_power = (
+                f"{result.avg_gpu_power_w:.2f}" if result.avg_gpu_power_w is not None else "N/A"
+            )
+            gpu_mem = (
+                f"{result.avg_gpu_memory_mb:.1f}" if result.avg_gpu_memory_mb is not None else "N/A"
+            )
+            cpu_util = (
+                f"{result.avg_cpu_utilization:.1f}"
+                if result.avg_cpu_utilization is not None
+                else "N/A"
+            )
             lines.append(f"| {name} | {gpu_util} | {gpu_power} | {gpu_mem} | {cpu_util} |")
         lines.append("")
 
@@ -110,11 +126,16 @@ def generate_markdown_report(
     if len(valid_accuracy) > 0:
         lines.append("## Action Accuracy Comparison")
         lines.append("")
-        lines.append("| Model | Action MSE | Action MAE | Max Error | Cosine Similarity | Relative Error |")
-        lines.append("|-------|-----------|-----------|-----------|------------------|---------------|")
+        lines.append(
+            "| Model | Action MSE | Action MAE | Max Error | Cosine Similarity | Relative Error |"
+        )
+        lines.append(
+            "|-------|-----------|-----------|-----------|------------------|---------------|"
+        )
         for name, acc in zip(valid_accuracy_names, valid_accuracy):
             lines.append(
-                f"| {name} | {acc.action_mse:.6f} | {acc.action_mae:.6f} | {acc.action_max_error:.6f} | "
+                f"| {name} | {acc.action_mse:.6f} | {acc.action_mae:.6f} | "
+                f"{acc.action_max_error:.6f} | "
                 f"{acc.action_cosine_similarity:.6f} | {acc.action_relative_error:.4f} |"
             )
         lines.append("")
@@ -146,11 +167,17 @@ def generate_markdown_report(
         lines.append("")
 
         # Size reduction if first is original
-        if len(model_paths) >= 2 and os.path.exists(model_paths[0]) and os.path.exists(model_paths[1]):
+        if (
+            len(model_paths) >= 2
+            and os.path.exists(model_paths[0])
+            and os.path.exists(model_paths[1])
+        ):
             size_info = compare_model_sizes(model_paths[0], model_paths[1])
-            lines.append(f"**Size reduction:** {size_info['size_reduction_mb']:.2f} MB "
-                        f"({size_info['size_reduction_pct']:.1f}%), "
-                        f"compression ratio: {size_info['compression_ratio']:.2f}x")
+            lines.append(
+                f"**Size reduction:** {size_info['size_reduction_mb']:.2f} MB "
+                f"({size_info['size_reduction_pct']:.1f}%), "
+                f"compression ratio: {size_info['compression_ratio']:.2f}x"
+            )
             lines.append("")
 
     # Inference provider info
@@ -179,7 +206,9 @@ def generate_markdown_report(
     return os.path.abspath(output_path)
 
 
-def generate_latency_distribution_data(benchmark_results: List[BenchmarkResult], model_names: List[str]) -> dict:
+def generate_latency_distribution_data(
+    benchmark_results: List[BenchmarkResult], model_names: List[str]
+) -> dict:
     """Prepare latency distribution data for plotting.
 
     Args:

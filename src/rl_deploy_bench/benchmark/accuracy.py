@@ -138,7 +138,11 @@ def evaluate_quantization_impact(
         Dictionary with quantization impact assessment.
     """
     mse_increase = quantized_result.action_mse - original_result.action_mse
-    mse_ratio = quantized_result.action_mse / original_result.action_mse if original_result.action_mse > 0 else float("inf")
+    mse_ratio = (
+        quantized_result.action_mse / original_result.action_mse
+        if original_result.action_mse > 0
+        else float("inf")
+    )
 
     return {
         "original_mse": original_result.action_mse,

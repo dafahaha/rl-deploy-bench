@@ -22,8 +22,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 # Test fixtures
 # ============================================================
 
+
 class SimplePolicy(nn.Module):
     """Simple MLP policy for testing."""
+
     def __init__(self, obs_dim=4, hidden_dim=32, action_dim=2):
         super().__init__()
         self.net = nn.Sequential(
@@ -32,6 +34,7 @@ class SimplePolicy(nn.Module):
             nn.Linear(hidden_dim, action_dim),
             nn.Tanh(),
         )
+
     def forward(self, x):
         return self.net(x)
 
@@ -59,9 +62,11 @@ def tmp_dir():
 # Platform detection tests
 # ============================================================
 
+
 class TestPlatformDetection:
     def test_detect_platform_returns_info(self):
         from rl_deploy_bench.utils.platform import detect_platform
+
         info = detect_platform()
         assert info.os is not None
         assert info.arch is not None
@@ -71,6 +76,7 @@ class TestPlatformDetection:
 
     def test_get_monitor_backend_returns_string(self):
         from rl_deploy_bench.utils.platform import detect_platform, get_monitor_backend
+
         info = detect_platform()
         backend = get_monitor_backend(info)
         assert backend in ("nvidia", "jetson", "cpu")
@@ -80,9 +86,11 @@ class TestPlatformDetection:
 # Model export tests
 # ============================================================
 
+
 class TestModelExport:
     def test_export_to_onnx_creates_file(self, policy, obs_shape, tmp_dir):
         from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+
         output_path = os.path.join(tmp_dir, "test.onnx")
         result = export_to_onnx(policy, obs_shape, output_path)
         assert os.path.exists(result)
@@ -90,6 +98,7 @@ class TestModelExport:
 
     def test_export_verification_passes(self, policy, obs_shape, tmp_dir):
         from rl_deploy_bench.exporter.onnx_export import export_to_onnx, verify_onnx_export
+
         output_path = os.path.join(tmp_dir, "test.onnx")
         export_to_onnx(policy, obs_shape, output_path)
         result = verify_onnx_export(output_path, policy, obs_shape)
@@ -98,6 +107,7 @@ class TestModelExport:
 
     def test_export_with_action_bounds(self, policy, obs_shape, tmp_dir):
         from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+
         output_path = os.path.join(tmp_dir, "test_bounds.onnx")
         low = np.array([-2.0, -1.0])
         high = np.array([2.0, 1.0])
@@ -108,6 +118,7 @@ class TestModelExport:
 # ============================================================
 # Inference runtime tests
 # ============================================================
+
 
 class TestOnnxRuntimeInference:
     def test_inference_returns_correct_shape(self, policy, obs_shape, tmp_dir):
@@ -154,19 +165,18 @@ class TestOnnxRuntimeInference:
 # Latency benchmark tests
 # ============================================================
 
+
 class TestLatencyBenchmark:
     def test_benchmark_returns_stats(self, policy, obs_shape, tmp_dir):
+        from rl_deploy_bench.benchmark.latency import benchmark_latency
         from rl_deploy_bench.exporter.onnx_export import export_to_onnx
         from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
-        from rl_deploy_bench.benchmark.latency import benchmark_latency
 
         onnx_path = os.path.join(tmp_dir, "test.onnx")
         export_to_onnx(policy, obs_shape, onnx_path)
         inference = OnnxRuntimeInference(onnx_path)
 
-        result = benchmark_latency(
-            inference, obs_shape, num_warmup=10, num_runs=50, monitor=None
-        )
+        result = benchmark_latency(inference, obs_shape, num_warmup=10, num_runs=50, monitor=None)
 
         assert result.latency.num_runs == 50
         assert result.latency.mean_ms > 0
@@ -181,9 +191,11 @@ class TestLatencyBenchmark:
 # Accuracy comparison tests
 # ============================================================
 
+
 class TestAccuracyComparison:
     def test_compare_identical_actions(self):
         from rl_deploy_bench.benchmark.accuracy import compare_actions
+
         actions = np.random.randn(100, 2).astype(np.float32)
         result = compare_actions(actions, actions)
         assert result.action_mse == pytest.approx(0.0, abs=1e-7)
@@ -191,6 +203,7 @@ class TestAccuracyComparison:
 
     def test_compare_different_actions(self):
         from rl_deploy_bench.benchmark.accuracy import compare_actions
+
         orig = np.random.randn(100, 2).astype(np.float32)
         deployed = orig + 0.1
         result = compare_actions(orig, deployed)
@@ -199,6 +212,7 @@ class TestAccuracyComparison:
 
     def test_generate_test_observations(self):
         from rl_deploy_bench.benchmark.accuracy import generate_test_observations
+
         obs = generate_test_observations((4,), num_samples=50)
         assert obs.shape == (50, 4)
         assert obs.dtype == np.float32
@@ -207,6 +221,7 @@ class TestAccuracyComparison:
 # ============================================================
 # Quantization tests
 # ============================================================
+
 
 class TestQuantization:
     def test_dynamic_quantize_creates_file(self, policy, obs_shape, tmp_dir):
@@ -256,12 +271,13 @@ class TestQuantization:
 # Report generation tests
 # ============================================================
 
+
 class TestReportGeneration:
     def test_markdown_report_generated(self, policy, obs_shape, tmp_dir):
-        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
-        from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
         from rl_deploy_bench.benchmark.latency import benchmark_latency
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
         from rl_deploy_bench.reporter.markdown import generate_markdown_report
+        from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
         from rl_deploy_bench.utils.platform import detect_platform
 
         onnx_path = os.path.join(tmp_dir, "test.onnx")
@@ -271,7 +287,9 @@ class TestReportGeneration:
 
         report_path = os.path.join(tmp_dir, "report.md")
         platform_info = detect_platform()
-        output = generate_markdown_report(report_path, [result], ["Test Model"], platform_info=platform_info)
+        output = generate_markdown_report(
+            report_path, [result], ["Test Model"], platform_info=platform_info
+        )
 
         assert os.path.exists(output)
         with open(output, "r") as f:
@@ -280,10 +298,10 @@ class TestReportGeneration:
         assert "Throughput" in content
 
     def test_html_report_generated(self, policy, obs_shape, tmp_dir):
-        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
-        from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
         from rl_deploy_bench.benchmark.latency import benchmark_latency
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
         from rl_deploy_bench.reporter.html import generate_html_report
+        from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
         from rl_deploy_bench.utils.platform import detect_platform
 
         onnx_path = os.path.join(tmp_dir, "test.onnx")
@@ -293,7 +311,9 @@ class TestReportGeneration:
 
         report_path = os.path.join(tmp_dir, "report.html")
         platform_info = detect_platform()
-        output = generate_html_report(report_path, [result], ["Test Model"], platform_info=platform_info)
+        output = generate_html_report(
+            report_path, [result], ["Test Model"], platform_info=platform_info
+        )
 
         assert os.path.exists(output)
         with open(output, "r") as f:
@@ -306,12 +326,14 @@ class TestReportGeneration:
 # Calibration data tests
 # ============================================================
 
+
 class TestCalibrationData:
     def test_generate_calibration_from_env(self):
         from rl_deploy_bench.benchmark.calibration import (
-            EnvironmentCalibrationGenerator,
             CalibrationConfig,
+            EnvironmentCalibrationGenerator,
         )
+
         config = CalibrationConfig(num_samples=50, collection_strategy="random", seed=42)
         generator = EnvironmentCalibrationGenerator("CartPole-v1", config=config)
         dataset = generator.generate()
@@ -323,10 +345,11 @@ class TestCalibrationData:
 
     def test_calibration_dataset_save_load(self, tmp_dir):
         from rl_deploy_bench.benchmark.calibration import (
-            EnvironmentCalibrationGenerator,
             CalibrationConfig,
             CalibrationDataset,
+            EnvironmentCalibrationGenerator,
         )
+
         config = CalibrationConfig(num_samples=30, collection_strategy="random", seed=42)
         generator = EnvironmentCalibrationGenerator("CartPole-v1", config=config)
         dataset = generator.generate()
@@ -341,9 +364,10 @@ class TestCalibrationData:
 
     def test_calibration_statistics(self):
         from rl_deploy_bench.benchmark.calibration import (
-            EnvironmentCalibrationGenerator,
             CalibrationConfig,
+            EnvironmentCalibrationGenerator,
         )
+
         config = CalibrationConfig(num_samples=50, collection_strategy="random", seed=42)
         generator = EnvironmentCalibrationGenerator("CartPole-v1", config=config)
         dataset = generator.generate()
@@ -361,9 +385,11 @@ class TestCalibrationData:
 # TensorRT fallback tests
 # ============================================================
 
+
 class TestTensorRTFallback:
     def test_is_tensorrt_available_returns_bool(self):
         from rl_deploy_bench.runtime.tensorrt_runtime import is_tensorrt_available
+
         result = is_tensorrt_available()
         assert isinstance(result, bool)
 
@@ -372,6 +398,7 @@ class TestTensorRTFallback:
             is_tensorrt_available,
             require_tensorrt,
         )
+
         if not is_tensorrt_available():
             with pytest.raises(ImportError) as exc_info:
                 require_tensorrt()

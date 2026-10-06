@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 from .base import BaseMonitor, SystemMetrics
 
@@ -89,7 +88,9 @@ class JetsonMonitor(BaseMonitor):
             if "CPU" in stats:
                 cpu = stats["CPU"]
                 if isinstance(cpu, list) and cpu:
-                    total_util = sum(c.get("status", {}).get("load", 0) for c in cpu if isinstance(c, dict))
+                    total_util = sum(
+                        c.get("status", {}).get("load", 0) for c in cpu if isinstance(c, dict)
+                    )
                     metrics.cpu_utilization = round(total_util / len(cpu), 2)
 
         except Exception:

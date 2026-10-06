@@ -7,12 +7,12 @@ https://stable-baselines3.readthedocs.io/en/master/guide/export.html
 from __future__ import annotations
 
 import os
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import torch
 
-from .onnx_export import ExportConfig, OnnxablePolicy, export_to_onnx, verify_onnx_export
+from .onnx_export import ExportConfig, OnnxablePolicy
 
 
 class SB3OnnxablePolicy(OnnxablePolicy):
@@ -179,7 +179,7 @@ def load_sb3_model(model_path: str, algo: Optional[str] = None, env=None):
     Returns:
         Loaded SB3 model.
     """
-    from stable_baselines3 import PPO, SAC, DQN, TD3, A2C, DDPG
+    from stable_baselines3 import A2C, DDPG, DQN, PPO, SAC, TD3
 
     algo_map = {
         "PPO": PPO,

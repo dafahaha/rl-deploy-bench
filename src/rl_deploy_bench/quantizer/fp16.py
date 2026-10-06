@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Optional, Sequence, Tuple
+from typing import Optional, Sequence
 
 import numpy as np
 
@@ -49,7 +49,7 @@ def convert_onnx_to_fp16(
         Absolute path to the FP16 model.
     """
     import onnx
-    from onnx import helper, TensorProto
+    from onnx import TensorProto, helper
 
     if config is None:
         config = FP16Config()
@@ -84,9 +84,11 @@ def convert_onnx_to_fp16(
         for initializer in graph.initializer:
             if initializer.data_type == TensorProto.FLOAT:
                 # Convert float32 data to float16
-                float_data = np.array(
-                    list(initializer.float_data), dtype=np.float32
-                ) if initializer.float_data else onnx.numpy_helper.to_array(initializer)
+                float_data = (
+                    np.array(list(initializer.float_data), dtype=np.float32)
+                    if initializer.float_data
+                    else onnx.numpy_helper.to_array(initializer)
+                )
                 fp16_data = float_data.astype(np.float16)
                 new_initializer = onnx.numpy_helper.from_array(fp16_data, name=initializer.name)
                 # Copy over raw_data
@@ -95,8 +97,6 @@ def convert_onnx_to_fp16(
     # Add Cast nodes for inputs (FP32 -> FP16)
     if config.keep_io_in_fp32:
         new_nodes = []
-        input_names = {inp.name for inp in graph.input}
-        output_names = {out.name for out in graph.output}
 
         # For each input that is used by nodes, add a Cast node
         cast_count = 0
@@ -195,16 +195,28 @@ def evaluate_fp16_impact(
 
     if mse_ok and cosine_ok:
         verdict = "pass"
-        recommendation = "FP16 ACCEPTABLE: Action deviation is within thresholds. FP16 deployment is safe and recommended for GPU acceleration."
+        recommendation = (
+            "FP16 ACCEPTABLE: Action deviation is within thresholds. "
+            "FP16 deployment is safe and recommended for GPU acceleration."
+        )
     elif mse_ok:
         verdict = "caution"
-        recommendation = "FP16 CAUTION: MSE acceptable but cosine similarity low. Action direction may deviate. Consider selective FP16 (keep critical layers in FP32)."
+        recommendation = (
+            "FP16 CAUTION: MSE acceptable but cosine similarity low. "
+            "Action direction may deviate. Consider selective FP16 (keep critical layers in FP32)."
+        )
     elif cosine_ok:
         verdict = "caution"
-        recommendation = "FP16 CAUTION: Cosine similarity good but MSE exceeds threshold. Action magnitude may deviate. Verify on actual environment rollouts."
+        recommendation = (
+            "FP16 CAUTION: Cosine similarity good but MSE exceeds threshold. "
+            "Action magnitude may deviate. Verify on actual environment rollouts."
+        )
     else:
         verdict = "fail"
-        recommendation = "FP16 NOT RECOMMENDED: Significant action deviation. Use FP32 or selective FP16 with op_blocklist."
+        recommendation = (
+            "FP16 NOT RECOMMENDED: Significant action deviation. "
+            "Use FP32 or selective FP16 with op_blocklist."
+        )
 
     return {
         "verdict": verdict,

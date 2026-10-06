@@ -10,8 +10,6 @@ import os
 from datetime import datetime
 from typing import List, Optional
 
-import numpy as np
-
 from ..benchmark.accuracy import AccuracyComparisonResult
 from ..benchmark.latency import BenchmarkResult
 from ..utils.platform import PlatformInfo
@@ -131,11 +129,15 @@ def generate_html_report(
     gpu_powers = [r.avg_gpu_power_w or 0 for r in benchmark_results]
     fig.add_trace(
         go.Bar(x=model_names, y=gpu_utils, name="GPU Util (%)", marker_color="#1f77b4"),
-        row=2, col=2,
+        row=2,
+        col=2,
     )
     fig.add_trace(
-        go.Bar(x=model_names, y=gpu_powers, name="GPU Power (W)", marker_color="#ff7f0e", yaxis="y2"),
-        row=2, col=2,
+        go.Bar(
+            x=model_names, y=gpu_powers, name="GPU Power (W)", marker_color="#ff7f0e", yaxis="y2"
+        ),
+        row=2,
+        col=2,
     )
     fig.update_xaxes(title_text="Model", row=2, col=2)
     fig.update_yaxes(title_text="GPU Util (%)", row=2, col=2)
@@ -193,6 +195,11 @@ def generate_html_report(
 
     platform_html = ""
     if platform_info is not None:
+        gpu_row = (
+            f"<tr><th>GPU</th><td>{platform_info.gpu_name}</td></tr>"
+            if platform_info.has_nvidia_gpu
+            else ""
+        )
         platform_html = f"""
         <div class="platform-info">
             <h2>Platform Information</h2>
@@ -202,7 +209,7 @@ def generate_html_report(
                 <tr><th>Python</th><td>{platform_info.python_version}</td></tr>
                 <tr><th>CPU Cores</th><td>{platform_info.cpu_count}</td></tr>
                 <tr><th>Memory</th><td>{platform_info.total_memory_gb} GB</td></tr>
-                {"<tr><th>GPU</th><td>" + str(platform_info.gpu_name) + "</td></tr>" if platform_info.has_nvidia_gpu else ""}
+                {gpu_row}
             </table>
         </div>
         """
@@ -214,8 +221,10 @@ def generate_html_report(
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title}</title>
     <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 20px; background: #f5f5f5; }}
-        .container {{ max-width: 1400px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
+        Roboto, sans-serif; margin: 20px; background: #f5f5f5; }}
+        .container {{ max-width: 1400px; margin: 0 auto; background: white; padding: 30px;
+        border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
         h1 {{ color: #333; border-bottom: 3px solid #1f77b4; padding-bottom: 10px; }}
         h2 {{ color: #444; margin-top: 30px; }}
         table {{ border-collapse: collapse; width: 100%; margin: 15px 0; }}
@@ -235,7 +244,8 @@ def generate_html_report(
 
         <h2>Summary</h2>
         <table>
-            <tr><th>Model</th><th>Mean (ms)</th><th>P50 (ms)</th><th>P95 (ms)</th><th>P99 (ms)</th><th>Throughput (FPS)</th></tr>
+            <tr><th>Model</th><th>Mean (ms)</th><th>P50 (ms)</th><th>P95 (ms)</th>
+            <th>P99 (ms)</th><th>Throughput (FPS)</th></tr>
             {''.join(summary_rows)}
         </table>
 

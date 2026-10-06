@@ -62,9 +62,7 @@ def export_to_torchscript(
 
     with torch.no_grad():
         if config.method == "trace":
-            scripted = torch.jit.trace(
-                model, example_observation, strict=config.strict
-            )
+            scripted = torch.jit.trace(model, example_observation, strict=config.strict)
         elif config.method == "script":
             scripted = torch.jit.script(model)
         else:

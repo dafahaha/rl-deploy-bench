@@ -94,7 +94,9 @@ class OnnxRuntimeInference:
         """
         if observation_shape is None:
             # Infer from input shape, replacing dynamic dims with 1
-            observation_shape = [1 if isinstance(d, str) or d is None else d for d in self.input_shape[1:]]
+            observation_shape = [
+                1 if isinstance(d, str) or d is None else d for d in self.input_shape[1:]
+            ]
 
         dummy = np.random.randn(1, *observation_shape).astype(np.float32)
         for _ in range(num_runs):

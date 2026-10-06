@@ -6,9 +6,7 @@ and report generation from the command line.
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -38,7 +36,9 @@ def info():
     table.add_row("Python", info.python_version)
     table.add_row("CPU Cores", str(info.cpu_count))
     table.add_row("Total Memory", f"{info.total_memory_gb} GB")
-    table.add_row("NVIDIA GPU", f"{info.gpu_name} (x{info.gpu_count})" if info.has_nvidia_gpu else "No")
+    table.add_row(
+        "NVIDIA GPU", f"{info.gpu_name} (x{info.gpu_count})" if info.has_nvidia_gpu else "No"
+    )
     table.add_row("Jetson", "Yes" if info.is_jetson else "No")
     table.add_row("Monitor Backend", backend)
 
@@ -58,7 +58,9 @@ def info():
 def export(
     model_path: str = typer.Argument(..., help="Path to SB3 model zip file"),
     output: str = typer.Option(..., "--output", "-o", help="Output ONNX file path"),
-    algo: Optional[str] = typer.Option(None, "--algo", "-a", help="Algorithm name (PPO, SAC, DQN, etc.)"),
+    algo: Optional[str] = typer.Option(
+        None, "--algo", "-a", help="Algorithm name (PPO, SAC, DQN, etc.)"
+    ),
     opset: int = typer.Option(17, "--opset", help="ONNX opset version"),
 ):
     """Export an SB3 model to ONNX format."""
@@ -66,9 +68,9 @@ def export(
 
     console.print(f"[cyan]Loading model:[/cyan] {model_path}")
     model = load_sb3_model(model_path, algo=algo)
-    console.print(f"[green]Model loaded successfully[/green]")
+    console.print("[green]Model loaded successfully[/green]")
 
-    console.print(f"[cyan]Exporting to ONNX...[/cyan]")
+    console.print("[cyan]Exporting to ONNX...[/cyan]")
     from .exporter.onnx_export import ExportConfig
 
     config = ExportConfig(opset_version=opset)
@@ -80,20 +82,40 @@ def export(
     if result["passed"]:
         console.print(f"[green]Verification passed![/green] Max diff: {result['max_abs_diff']:.6f}")
     else:
-        console.print(f"[yellow]Verification warning:[/yellow] Max diff {result['max_abs_diff']:.6f} exceeds tolerance")
+        console.print(
+            "[yellow]Verification warning:[/yellow] "
+            f"Max diff {result['max_abs_diff']:.6f} exceeds tolerance"
+        )
 
 
 @app.command()
 def quantize(
     onnx_path: str = typer.Argument(..., help="Path to input ONNX model"),
-    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output quantized model path"),
-    mode: str = typer.Option("dynamic", "--mode", "-m", help="Quantization mode: dynamic or static"),
-    obs_shape: Optional[str] = typer.Option(None, "--obs-shape", help="Observation shape (e.g., '4' or '3,84,84')"),
-    calibration_samples: int = typer.Option(100, "--calibration-samples", help="Number of calibration samples for static mode"),
-    calibration_file: Optional[str] = typer.Option(None, "--calibration-file", help="Path to calibration dataset .npz file (from 'calibrate' command)"),
+    output: Optional[str] = typer.Option(
+        None, "--output", "-o", help="Output quantized model path"
+    ),
+    mode: str = typer.Option(
+        "dynamic", "--mode", "-m", help="Quantization mode: dynamic or static"
+    ),
+    obs_shape: Optional[str] = typer.Option(
+        None, "--obs-shape", help="Observation shape (e.g., '4' or '3,84,84')"
+    ),
+    calibration_samples: int = typer.Option(
+        100, "--calibration-samples", help="Number of calibration samples for static mode"
+    ),
+    calibration_file: Optional[str] = typer.Option(
+        None,
+        "--calibration-file",
+        help="Path to calibration dataset .npz file (from 'calibrate' command)",
+    ),
 ):
     """Quantize an ONNX model to INT8."""
-    from .quantizer.int8 import dynamic_quantize, static_quantize, static_quantize_with_dataset, get_model_size_mb
+    from .quantizer.int8 import (
+        dynamic_quantize,
+        get_model_size_mb,
+        static_quantize,
+        static_quantize_with_dataset,
+    )
 
     original_size = get_model_size_mb(onnx_path)
     console.print(f"[cyan]Original model size:[/cyan] {original_size:.2f} MB")
@@ -103,21 +125,39 @@ def quantize(
         quantized_path = dynamic_quantize(onnx_path, output)
     elif mode == "static":
         if obs_shape is None and calibration_file is None:
-            console.print("[red]Error:[/red] --obs-shape or --calibration-file is required for static quantization")
+            console.print(
+                "[red]Error:[/red] --obs-shape or --calibration-file is required "
+                "for static quantization"
+            )
             raise typer.Exit(1)
 
         if calibration_file:
             from .benchmark.calibration import CalibrationDataset
+
             console.print(f"[cyan]Loading calibration dataset:[/cyan] {calibration_file}")
             dataset = CalibrationDataset.load(calibration_file)
-            console.print(f"[green]Loaded {len(dataset)} calibration samples from {dataset.env_name}[/green]")
-            console.print("[cyan]Applying static INT8 quantization with environment calibration...[/cyan]")
-            quantized_path = static_quantize_with_dataset(onnx_path, dataset, output, input_name="observation")
+            console.print(
+                f"[green]Loaded {len(dataset)} calibration samples from {dataset.env_name}[/green]"
+            )
+            console.print(
+                "[cyan]Applying static INT8 quantization with environment calibration...[/cyan]"
+            )
+            quantized_path = static_quantize_with_dataset(
+                onnx_path, dataset, output, input_name="observation"
+            )
         else:
             shape = tuple(int(x) for x in obs_shape.split(","))
-            console.print(f"[cyan]Applying static INT8 quantization (calibration: {calibration_samples} random samples)...[/cyan]")
-            console.print("[yellow]Tip: Use 'rl-deploy-bench calibrate' to generate environment-based calibration data for better results[/yellow]")
-            quantized_path = static_quantize(onnx_path, shape, output, calibration_samples=calibration_samples)
+            console.print(
+                "[cyan]Applying static INT8 quantization "
+                f"(calibration: {calibration_samples} random samples)...[/cyan]"
+            )
+            console.print(
+                "[yellow]Tip: Use 'rl-deploy-bench calibrate' to generate "
+                "environment-based calibration data for better results[/yellow]"
+            )
+            quantized_path = static_quantize(
+                onnx_path, shape, output, calibration_samples=calibration_samples
+            )
     else:
         console.print(f"[red]Error:[/red] Unknown mode '{mode}'. Use 'dynamic' or 'static'.")
         raise typer.Exit(1)
@@ -127,16 +167,29 @@ def quantize(
     reduction_pct = (reduction / original_size * 100) if original_size > 0 else 0
 
     console.print(f"[green]Quantized model:[/green] {quantized_path}")
-    console.print(f"[green]Size:[/green] {quantized_size:.2f} MB (reduced {reduction:.2f} MB, {reduction_pct:.1f}%)")
+    console.print(
+        "[green]Size:[/green] "
+        f"{quantized_size:.2f} MB (reduced {reduction:.2f} MB, {reduction_pct:.1f}%)"
+    )
 
 
 @app.command()
 def calibrate(
-    env_name: str = typer.Argument(..., help="Gymnasium environment name (e.g., 'Pendulum-v1', 'CartPole-v1')"),
-    output: str = typer.Option(..., "--output", "-o", help="Output calibration dataset .npz file path"),
-    num_samples: int = typer.Option(500, "--num-samples", "-n", help="Number of calibration samples to collect"),
-    strategy: str = typer.Option("random", "--strategy", "-s", help="Collection strategy: random, policy, or mixed"),
-    sb3_model: Optional[str] = typer.Option(None, "--sb3-model", help="Path to SB3 model zip for policy-guided collection"),
+    env_name: str = typer.Argument(
+        ..., help="Gymnasium environment name (e.g., 'Pendulum-v1', 'CartPole-v1')"
+    ),
+    output: str = typer.Option(
+        ..., "--output", "-o", help="Output calibration dataset .npz file path"
+    ),
+    num_samples: int = typer.Option(
+        500, "--num-samples", "-n", help="Number of calibration samples to collect"
+    ),
+    strategy: str = typer.Option(
+        "random", "--strategy", "-s", help="Collection strategy: random, policy, or mixed"
+    ),
+    sb3_model: Optional[str] = typer.Option(
+        None, "--sb3-model", help="Path to SB3 model zip for policy-guided collection"
+    ),
     algo: Optional[str] = typer.Option(None, "--algo", help="SB3 algorithm name (PPO, SAC, etc.)"),
     seed: int = typer.Option(42, "--seed", help="Random seed"),
 ):
@@ -147,9 +200,9 @@ def calibrate(
     distribution the model will see during deployment.
     """
     from .benchmark.calibration import (
+        CalibrationConfig,
         EnvironmentCalibrationGenerator,
         SB3PolicyCalibrationGenerator,
-        CalibrationConfig,
     )
 
     config = CalibrationConfig(
@@ -160,43 +213,59 @@ def calibrate(
 
     if sb3_model:
         from .exporter.sb3 import load_sb3_model
+
         console.print(f"[cyan]Loading SB3 model:[/cyan] {sb3_model}")
         model = load_sb3_model(sb3_model, algo=algo)
         console.print("[green]SB3 model loaded, using policy-guided collection[/green]")
         generator = SB3PolicyCalibrationGenerator(env_name, model, config=config)
     else:
         if strategy != "random":
-            console.print(f"[yellow]Warning:[/yellow] No SB3 model provided, falling back to random strategy")
+            console.print(
+                "[yellow]Warning:[/yellow] No SB3 model provided, falling back to random strategy"
+            )
             config.collection_strategy = "random"
         generator = EnvironmentCalibrationGenerator(env_name, config=config)
 
-    console.print(f"[cyan]Collecting {num_samples} samples from {env_name} (strategy: {config.collection_strategy})...[/cyan]")
+    console.print(
+        "[cyan]Collecting "
+        f"{num_samples} samples from {env_name} (strategy: {config.collection_strategy})...[/cyan]"
+    )
     dataset = generator.generate()
 
     stats = dataset.get_statistics()
-    console.print(f"[green]Collected {len(dataset)} samples in {dataset.collection_stats['episodes_completed']} episodes[/green]")
+    console.print(
+        "[green]Collected "
+        f"{len(dataset)} samples in "
+        f"{dataset.collection_stats['episodes_completed']} episodes[/green]"
+    )
     console.print(f"  Observation mean: {stats['mean']:.4f}, std: {stats['std']:.4f}")
     console.print(f"  Observation range: [{stats['min']:.4f}, {stats['max']:.4f}]")
 
     saved_path = dataset.save(output)
     console.print(f"[green]Calibration dataset saved:[/green] {saved_path}")
-    console.print(f"\n[cyan]Next steps:[/cyan]")
-    console.print(f"  rl-deploy-bench quantize model.onnx --mode static --calibration-file {saved_path}")
+    console.print("\n[cyan]Next steps:[/cyan]")
+    console.print(
+        f"  rl-deploy-bench quantize model.onnx --mode static --calibration-file {saved_path}"
+    )
 
 
 @app.command()
 def benchmark(
     onnx_path: str = typer.Argument(..., help="Path to ONNX model"),
-    obs_shape: str = typer.Option(..., "--obs-shape", help="Observation shape (e.g., '4' or '3,84,84')"),
+    obs_shape: str = typer.Option(
+        ..., "--obs-shape", help="Observation shape (e.g., '4' or '3,84,84')"
+    ),
     num_runs: int = typer.Option(500, "--num-runs", help="Number of benchmark runs"),
     num_warmup: int = typer.Option(50, "--num-warmup", help="Number of warmup runs"),
     batch_size: int = typer.Option(1, "--batch-size", help="Batch size"),
-    monitor: bool = typer.Option(True, "--monitor/--no-monitor", help="Collect system metrics during benchmark"),
-    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output report path (Markdown or HTML)"),
+    monitor: bool = typer.Option(
+        True, "--monitor/--no-monitor", help="Collect system metrics during benchmark"
+    ),
+    output: Optional[str] = typer.Option(
+        None, "--output", "-o", help="Output report path (Markdown or HTML)"
+    ),
 ):
     """Run latency and throughput benchmark on an ONNX model."""
-    import numpy as np
-
     from .benchmark.latency import benchmark_latency
     from .monitor import create_monitor
     from .reporter.markdown import generate_markdown_report
@@ -207,7 +276,9 @@ def benchmark(
     console.print(f"[cyan]Loading model:[/cyan] {onnx_path}")
 
     inference = OnnxRuntimeInference(onnx_path)
-    console.print(f"[green]Active providers:[/green] {', '.join(inference.session.get_providers())}")
+    console.print(
+        f"[green]Active providers:[/green] {', '.join(inference.session.get_providers())}"
+    )
 
     # Create monitor if requested
     mon = None
@@ -254,9 +325,13 @@ def benchmark(
         if output.endswith(".html"):
             from .reporter.html import generate_html_report
 
-            report_path = generate_html_report(output, [result], ["Model"], platform_info=platform_info)
+            report_path = generate_html_report(
+                output, [result], ["Model"], platform_info=platform_info
+            )
         else:
-            report_path = generate_markdown_report(output, [result], ["Model"], platform_info=platform_info)
+            report_path = generate_markdown_report(
+                output, [result], ["Model"], platform_info=platform_info
+            )
         console.print(f"[green]Report saved:[/green] {report_path}")
 
 
@@ -313,6 +388,9 @@ def compare(
     orig_bench = benchmark_latency(orig_inf, shape, num_runs=200, num_warmup=30)
     console.print("[cyan]Benchmarking quantized model...[/cyan]")
     quant_bench = benchmark_latency(quant_inf, shape, num_runs=200, num_warmup=30)
+    throughput_change = (
+        quant_bench.latency.throughput_fps / orig_bench.latency.throughput_fps - 1
+    ) * 100
 
     # Size comparison
     size_info = compare_model_sizes(original, quantized)
@@ -323,14 +401,30 @@ def compare(
     table.add_column("Original (FP32)", style="green")
     table.add_column("Quantized (INT8)", style="yellow")
     table.add_column("Change", style="magenta")
-    table.add_row("Mean Latency", f"{orig_bench.latency.mean_ms:.3f} ms", f"{quant_bench.latency.mean_ms:.3f} ms",
-                  f"{(quant_bench.latency.mean_ms / orig_bench.latency.mean_ms - 1) * 100:+.1f}%")
-    table.add_row("P95 Latency", f"{orig_bench.latency.p95_ms:.3f} ms", f"{quant_bench.latency.p95_ms:.3f} ms",
-                  f"{(quant_bench.latency.p95_ms / orig_bench.latency.p95_ms - 1) * 100:+.1f}%")
-    table.add_row("Throughput", f"{orig_bench.latency.throughput_fps:.1f} FPS", f"{quant_bench.latency.throughput_fps:.1f} FPS",
-                  f"{(quant_bench.latency.throughput_fps / orig_bench.latency.throughput_fps - 1) * 100:+.1f}%")
-    table.add_row("Model Size", f"{size_info['original_size_mb']:.2f} MB", f"{size_info['quantized_size_mb']:.2f} MB",
-                  f"-{size_info['size_reduction_pct']:.1f}%")
+    table.add_row(
+        "Mean Latency",
+        f"{orig_bench.latency.mean_ms:.3f} ms",
+        f"{quant_bench.latency.mean_ms:.3f} ms",
+        f"{(quant_bench.latency.mean_ms / orig_bench.latency.mean_ms - 1) * 100:+.1f}%",
+    )
+    table.add_row(
+        "P95 Latency",
+        f"{orig_bench.latency.p95_ms:.3f} ms",
+        f"{quant_bench.latency.p95_ms:.3f} ms",
+        f"{(quant_bench.latency.p95_ms / orig_bench.latency.p95_ms - 1) * 100:+.1f}%",
+    )
+    table.add_row(
+        "Throughput",
+        f"{orig_bench.latency.throughput_fps:.1f} FPS",
+        f"{quant_bench.latency.throughput_fps:.1f} FPS",
+        f"{throughput_change:+.1f}%",
+    )
+    table.add_row(
+        "Model Size",
+        f"{size_info['original_size_mb']:.2f} MB",
+        f"{size_info['quantized_size_mb']:.2f} MB",
+        f"-{size_info['size_reduction_pct']:.1f}%",
+    )
     table.add_row("Action MSE", "-", f"{acc_result.action_mse:.6f}", "-")
     table.add_row("Cosine Sim", "-", f"{acc_result.action_cosine_similarity:.6f}", "-")
     console.print(table)

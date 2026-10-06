@@ -12,17 +12,17 @@ from __future__ import annotations
 
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple
 
 import numpy as np
-
 
 TENSORRT_AVAILABLE = False
 TENSORRT_IMPORT_ERROR = None
 
 try:
     import tensorrt as trt
+
     TENSORRT_AVAILABLE = True
 except ImportError as e:
     TENSORRT_IMPORT_ERROR = str(e)
@@ -222,8 +222,8 @@ class TensorRTEngine:
         if self.context is None:
             raise RuntimeError("Engine not loaded. Call build_from_onnx() or load_engine() first.")
 
+        import pycuda.autoinit  # noqa: F401  (side-effect: initializes CUDA context)
         import pycuda.driver as cuda
-        import pycuda.autoinit
 
         # Ensure batch dimension
         if observation.ndim == len(self.input_shape) - 1:

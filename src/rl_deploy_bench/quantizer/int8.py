@@ -173,9 +173,15 @@ def static_quantize(
         model_input=onnx_model_path,
         model_output=output_path,
         calibration_data_reader=reader,
-        quant_format=getattr(__import__("onnxruntime.quantization", fromlist=["QuantFormat"]), "QuantFormat").QDQ
-        if config.quant_format == "QDQ"
-        else getattr(__import__("onnxruntime.quantization", fromlist=["QuantFormat"]), "QuantFormat").QOperator,
+        quant_format=(
+            getattr(
+                __import__("onnxruntime.quantization", fromlist=["QuantFormat"]), "QuantFormat"
+            ).QDQ
+            if config.quant_format == "QDQ"
+            else getattr(
+                __import__("onnxruntime.quantization", fromlist=["QuantFormat"]), "QuantFormat"
+            ).QOperator
+        ),
         weight_type=weight_type,
         activation_type=activation_type,
         per_channel=config.per_channel,
@@ -360,16 +366,30 @@ def evaluate_quantization(
     cosine_ok = acc.action_cosine_similarity > cosine_threshold
 
     if mse_ok and cosine_ok:
-        recommendation = "QUANTIZATION ACCEPTABLE: Action deviation is within thresholds. INT8 deployment is safe."
+        recommendation = (
+            "QUANTIZATION ACCEPTABLE: Action deviation is within thresholds. "
+            "INT8 deployment is safe."
+        )
         verdict = "pass"
     elif mse_ok and not cosine_ok:
-        recommendation = "QUANTIZATION CAUTION: MSE is acceptable but cosine similarity is low. Action direction may deviate. Consider FP16 or more calibration data."
+        recommendation = (
+            "QUANTIZATION CAUTION: MSE is acceptable but cosine similarity is low. "
+            "Action direction may deviate. Consider FP16 or more calibration data."
+        )
         verdict = "caution"
     elif not mse_ok and cosine_ok:
-        recommendation = "QUANTIZATION CAUTION: Cosine similarity is good but MSE exceeds threshold. Action magnitude may deviate. Consider static quantization with environment calibration data."
+        recommendation = (
+            "QUANTIZATION CAUTION: Cosine similarity is good but MSE exceeds threshold. "
+            "Action magnitude may deviate. Consider static quantization "
+            "with environment calibration data."
+        )
         verdict = "caution"
     else:
-        recommendation = "QUANTIZATION NOT RECOMMENDED: Significant action deviation detected. Use FP16 or FP32 instead. Try collecting more calibration data from the actual environment."
+        recommendation = (
+            "QUANTIZATION NOT RECOMMENDED: Significant action deviation detected. "
+            "Use FP16 or FP32 instead. Try collecting more calibration data "
+            "from the actual environment."
+        )
         verdict = "fail"
 
     return {

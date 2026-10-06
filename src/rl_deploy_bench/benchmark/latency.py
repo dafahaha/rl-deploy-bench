@@ -135,7 +135,9 @@ def benchmark_latency(
 
         gpu_utils = [m.gpu_utilization for m in system_metrics if m.gpu_utilization is not None]
         gpu_powers = [m.gpu_power_w for m in system_metrics if m.gpu_power_w is not None]
-        gpu_mems = [m.gpu_memory_used_mb for m in system_metrics if m.gpu_memory_used_mb is not None]
+        gpu_mems = [
+            m.gpu_memory_used_mb for m in system_metrics if m.gpu_memory_used_mb is not None
+        ]
         cpu_utils = [m.cpu_utilization for m in system_metrics if m.cpu_utilization is not None]
 
         if gpu_utils:

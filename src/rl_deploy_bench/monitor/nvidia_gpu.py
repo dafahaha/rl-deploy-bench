@@ -52,8 +52,8 @@ class NvidiaGPUMonitor(BaseMonitor):
         if not self._initialized or self._handle is None:
             raise RuntimeError("Monitor not started. Call start() first.")
 
-        import pynvml
         import psutil
+        import pynvml
 
         metrics = SystemMetrics(timestamp=time.time())
 
@@ -81,9 +81,7 @@ class NvidiaGPUMonitor(BaseMonitor):
 
         # GPU temperature
         try:
-            temp = pynvml.nvmlDeviceGetTemperature(
-                self._handle, pynvml.NVML_TEMPERATURE_GPU
-            )
+            temp = pynvml.nvmlDeviceGetTemperature(self._handle, pynvml.NVML_TEMPERATURE_GPU)
             metrics.gpu_temperature_c = float(temp)
         except Exception:
             pass
