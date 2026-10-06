@@ -58,22 +58,30 @@ def _get_total_memory_gb() -> float:
 
 def _detect_nvidia_gpu() -> tuple[bool, int, Optional[str]]:
     """Detect NVIDIA GPU using pynvml if available, fallback to nvidia-smi."""
-    # Try pynvml first
+    # Try pynvml first. The NVML session opened by nvmlInit() is closed in a
+    # finally block: if nvmlDeviceGetHandleByIndex / nvmlDeviceGetName raises
+    # mid-session, nvmlShutdown() must still run rather than leaking the handle
+    # on every detect_platform() call.
     try:
         import pynvml
 
         pynvml.nvmlInit()
-        count = pynvml.nvmlDeviceGetCount()
-        if count > 0:
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            name = pynvml.nvmlDeviceGetName(handle)
-            if isinstance(name, bytes):
-                name = name.decode("utf-8", errors="replace")
-            pynvml.nvmlShutdown()
-            return True, count, name
-        pynvml.nvmlShutdown()
     except Exception:
+        # pynvml missing or init failed — fall through to nvidia-smi.
         pass
+    else:
+        try:
+            count = pynvml.nvmlDeviceGetCount()
+            if count > 0:
+                handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+                name = pynvml.nvmlDeviceGetName(handle)
+                if isinstance(name, bytes):
+                    name = name.decode("utf-8", errors="replace")
+                return True, count, name
+        except Exception:
+            pass
+        finally:
+            pynvml.nvmlShutdown()
 
     # Fallback to nvidia-smi command
     try:

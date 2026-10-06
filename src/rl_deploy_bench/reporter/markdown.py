@@ -17,8 +17,11 @@ from ..utils.platform import PlatformInfo
 
 
 def _escape_pipe(text) -> str:
-    """Escape '|' so a user-supplied name/title cannot break Markdown table columns."""
-    return str(text).replace("|", "\\|")
+    """Escape '|' so a user-supplied name/title cannot break Markdown table
+    columns, and fold embedded newlines into spaces so a multi-line name cannot
+    inject extra table rows."""
+    s = str(text).replace("|", "\\|")
+    return s.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
 
 
 def generate_markdown_report(
@@ -197,7 +200,7 @@ def generate_markdown_report(
     lines.append("")
     for name, result in zip(model_names, benchmark_results):
         info = result.model_info
-        lines.append(f"### {name}")
+        lines.append(f"### {_escape_pipe(name)}")
         lines.append("")
         lines.append(f"- **Providers:** {', '.join(info.get('active_providers', []))}")
         lines.append(f"- **Input shape:** {info.get('input_shape', 'N/A')}")

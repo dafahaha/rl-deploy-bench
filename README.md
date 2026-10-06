@@ -177,6 +177,14 @@ rl_deploy_bench/
     └── html.py
 ```
 
+> **Note on TorchScript export**: `export_to_torchscript()` builds on the
+> legacy `torch.jit.trace`/`script`/`freeze` stack. It targets legacy PyTorch
+> deployments (LibTorch C++, mobile, embedded). On Python 3.14+ PyTorch emits
+> `FutureWarning` ("torch.jit ... may break, switch to torch.compile or
+> torch.export"); the current implementation still works on CPython 3.14, but
+> the forward direction is `torch.export` / `torch.compile` rather than further
+> investment in TorchScript. New projects should prefer the ONNX export path.
+
 ## 🗺️ Roadmap
 
 - [x] v1.0 — Core: ONNX/TorchScript export, FP16/INT8 quantization, latency benchmark, accuracy comparison, reports

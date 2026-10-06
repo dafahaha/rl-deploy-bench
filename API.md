@@ -216,9 +216,13 @@ quantized_path = static_quantize_with_dataset(
 )
 ```
 
-### `evaluate_quantization(original_model_path, quantized_model_path, observation_shape, num_samples=500, mse_threshold=0.01) -> dict`
+### `evaluate_quantization(original_model_path, quantized_model_path, observation_shape, num_samples=500, mse_threshold=0.01, cosine_threshold=0.99) -> dict`
 
 Evaluate quantization impact with automated recommendation.
+
+`cosine_threshold` defaults to `0.99`, on the same pass/fail semantics as
+`evaluate_fp16_impact` below (the two evaluators share identical MSE / cosine
+gates).
 
 ```python
 from rl_deploy_bench.quantizer import evaluate_quantization
@@ -228,9 +232,52 @@ print(f"Verdict: {result['verdict']}")  # 'pass', 'caution', or 'fail'
 print(f"Recommendation: {result['recommendation']}")
 ```
 
-### `quantize_and_evaluate(onnx_model_path, observation_shape, mode="dynamic", calibration_dataset=None) -> dict`
+### `quantize_and_evaluate(onnx_model_path, observation_shape, output_dir=None, mode="dynamic", calibration_dataset=None, num_eval_samples=500, mse_threshold=0.01) -> dict`
 
-One-click quantization and evaluation.
+One-click quantization and evaluation. Quantizes the ONNX model, evaluates the
+accuracy impact, and returns the evaluation dictionary (same shape as
+`evaluate_quantization`).
+
+### FP16
+
+#### `FP16Config(keep_io_in_fp32=True, convert_weights=True, op_blocklist=())`
+
+Configuration for ONNX → FP16 conversion.
+
+- `keep_io_in_fp32`: keep model inputs/outputs in FP32 (Cast nodes inserted
+  around the FP16 compute graph)
+- `convert_weights`: convert FP32 initializer weights to FP16
+- `op_blocklist`: tuple of op types to keep in FP32 (e.g. `("Softmax", "Exp")`)
+  — honored by the onnxruntime converter; the manual fallback warns and ignores
+  it
+
+#### `convert_onnx_to_fp16(onnx_model_path, output_path=None, config=None) -> str`
+
+Convert an FP32 ONNX model to FP16. Prefers onnxruntime's `convert_float_to_float16`
+and falls back to a manual rewrite (validated with `onnx.checker`) when that
+converter is unavailable.
+
+```python
+from rl_deploy_bench.quantizer import FP16Config, convert_onnx_to_fp16
+
+fp16_path = convert_onnx_to_fp16("model.onnx")
+fp16_path = convert_onnx_to_fp16(
+    "model.onnx", config=FP16Config(op_blocklist=("Softmax",))
+)
+```
+
+#### `evaluate_fp16_impact(original_model_path, fp16_model_path, observation_shape, num_samples=500, mse_threshold=0.01, cosine_threshold=0.99) -> dict`
+
+Evaluate FP16 conversion impact with an automated pass/caution/fail verdict,
+same metrics and thresholds as `evaluate_quantization` (`cosine_threshold`
+defaults to `0.99` so the two evaluators share pass/fail semantics).
+
+```python
+from rl_deploy_bench.quantizer import evaluate_fp16_impact
+
+result = evaluate_fp16_impact("model.onnx", "model_fp16.onnx", observation_shape=(4,))
+print(result["verdict"], result["recommendation"])
+```
 
 ---
 

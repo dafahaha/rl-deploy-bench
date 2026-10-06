@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Optional, Sequence, Tuple
+from typing import Optional, Sequence
 
 import numpy as np
 import torch
 import torch.nn as nn
+
+from ..runtime.onnx_runtime import InferenceResult
 
 
 @dataclass
@@ -164,7 +166,10 @@ class TorchScriptInference:
     """TorchScript inference runtime.
 
     Provides a unified interface for running inference with TorchScript
-    models, compatible with the benchmarking and accuracy comparison APIs.
+    models, compatible with the benchmarking and accuracy comparison APIs:
+    ``infer()`` returns an :class:`InferenceResult` (``.actions`` /
+    ``.latency_ms``) and ``get_provider_info()`` returns a dict, mirroring
+    :class:`~rl_deploy_bench.runtime.onnx_runtime.OnnxRuntimeInference`.
     """
 
     def __init__(self, model_path: str, device: str = "cpu"):
@@ -179,7 +184,7 @@ class TorchScriptInference:
         self.model = _safe_load_torchscript(model_path)
         self.model.eval()
 
-    def infer(self, observation: np.ndarray) -> Tuple[np.ndarray, float]:
+    def infer(self, observation: np.ndarray) -> InferenceResult:
         """Run single inference.
 
         Args:
@@ -187,7 +192,9 @@ class TorchScriptInference:
                 single observation (*obs_shape).
 
         Returns:
-            Tuple of (output_actions, latency_ms).
+            InferenceResult with ``actions`` (np.ndarray) and
+            ``latency_ms`` (float), matching OnnxRuntimeInference so the
+            result can be fed to benchmark_latency / evaluate_* unchanged.
         """
         if observation.ndim == 1:
             observation = observation[np.newaxis]
@@ -209,7 +216,7 @@ class TorchScriptInference:
             torch.cuda.synchronize()
         latency_ms = (time.perf_counter() - start) * 1000
 
-        return output.cpu().numpy(), latency_ms
+        return InferenceResult(actions=output.cpu().numpy(), latency_ms=latency_ms)
 
     def warmup(self, num_runs: int = 10, observation_shape: Optional[Sequence[int]] = None):
         """Warm up the model for consistent benchmarking.
@@ -228,6 +235,19 @@ class TorchScriptInference:
         if self.device.type == "cuda":
             torch.cuda.synchronize()
         self._warmed_up = True
+
+    def get_provider_info(self) -> dict:
+        """Get information about the active TorchScript backend.
+
+        Mirrors OnnxRuntimeInference.get_provider_info() so benchmark_latency
+        can attach the result to BenchmarkResult.model_info.
+        """
+        return {
+            "active_providers": [f"torchscript:{self.device.type}"],
+            "backend": "torchscript",
+            "device": self.device.type,
+            "model_path": self.model_path,
+        }
 
 
 def compare_onnx_torchscript(
@@ -260,7 +280,7 @@ def compare_onnx_torchscript(
     for _ in range(num_samples):
         obs = np.random.randn(1, *observation_shape).astype(np.float32)
         onnx_output = onnx_inf.infer(obs).actions
-        ts_output, _ = ts_inf.infer(obs)
+        ts_output = ts_inf.infer(obs).actions
         diff = np.abs(onnx_output - ts_output).max()
         max_diff = max(max_diff, diff)
         mean_diff += diff

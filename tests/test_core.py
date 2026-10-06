@@ -82,6 +82,47 @@ class TestPlatformDetection:
         backend = get_monitor_backend(info)
         assert backend in ("nvidia", "jetson", "cpu")
 
+    def test_detect_nvidia_gpu_shuts_down_nvml_when_middle_step_raises(self, monkeypatch):
+        """R5-建议-2: if a pynvml call after nvmlInit() raises, nvmlShutdown()
+        must still run (finally), not leak the NVML handle on every call."""
+        import types
+
+        from rl_deploy_bench.utils import platform
+
+        shutdown_calls = []
+
+        class _FakeNVML:
+            @staticmethod
+            def nvmlInit():
+                pass
+
+            @staticmethod
+            def nvmlShutdown():
+                shutdown_calls.append(1)
+
+            @staticmethod
+            def nvmlDeviceGetCount():
+                return 1
+
+            @staticmethod
+            def nvmlDeviceGetHandleByIndex(index):
+                raise RuntimeError("simulated NVML failure mid-session")
+
+            @staticmethod
+            def nvmlDeviceGetName(handle):
+                return b"Fake GPU"
+
+        fake = types.ModuleType("pynvml")
+        fake.nvmlInit = _FakeNVML.nvmlInit
+        fake.nvmlShutdown = _FakeNVML.nvmlShutdown
+        fake.nvmlDeviceGetCount = _FakeNVML.nvmlDeviceGetCount
+        fake.nvmlDeviceGetHandleByIndex = _FakeNVML.nvmlDeviceGetHandleByIndex
+        fake.nvmlDeviceGetName = _FakeNVML.nvmlDeviceGetName
+        monkeypatch.setitem(sys.modules, "pynvml", fake)
+
+        platform._detect_nvidia_gpu()
+        assert shutdown_calls == [1]
+
 
 # ============================================================
 # Model export tests
@@ -738,6 +779,32 @@ class TestReportGeneration:
         # columns.
         assert r"a\|b\|c" in content
 
+    def test_markdown_report_folds_newlines_in_model_name(self, policy, obs_shape, tmp_dir):
+        """R5-吹毛-1: a model name containing a newline must not inject extra
+        Markdown table rows; embedded newlines fold into spaces."""
+        from rl_deploy_bench.benchmark.latency import benchmark_latency
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.reporter.markdown import _escape_pipe, generate_markdown_report
+        from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
+
+        # Unit level: newline folded, pipe still escaped.
+        assert _escape_pipe("a\nb|c") == "a b\\|c"
+        assert _escape_pipe("a\r\nb") == "a b"
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+        inference = OnnxRuntimeInference(onnx_path)
+        result = benchmark_latency(inference, obs_shape, num_warmup=5, num_runs=20)
+
+        report_path = os.path.join(tmp_dir, "report.md")
+        output = generate_markdown_report(report_path, [result], ["line1\nline2"])
+        with open(output, "r", encoding="utf-8") as f:
+            content = f.read()
+        # No raw newline-inside-the-cell row injection: the folded name appears
+        # on a single table row.
+        assert "line1 line2" in content
+        assert "line1\nline2" not in content
+
     def test_latency_distribution_data_includes_p90(self):
         """R3-吹毛-2: the plot-data helper must expose p90 like every other
         percentile, positioned between p50 and p95."""
@@ -933,6 +1000,67 @@ class TestTensorRTFallback:
             with pytest.raises(ImportError) as exc_info:
                 require_tensorrt()
             assert "TensorRT" in str(exc_info.value)
+
+
+# ============================================================
+# TorchScript export/inference tests (real, not skipped)
+# ============================================================
+
+
+class TestTorchScriptExport:
+    def test_torchscript_smoke_matches_pytorch_and_docks_into_benchmark(
+        self, policy, obs_shape, tmp_dir
+    ):
+        """R5-建议-4 + R5-应改-2: trace-export -> verify -> load via
+        TorchScriptInference -> same-input match against PyTorch; and
+        benchmark_latency(TorchScriptInference(...)) must not raise
+        AttributeError (unified duck interface: .actions / .latency_ms /
+        get_provider_info)."""
+        from rl_deploy_bench.benchmark.latency import benchmark_latency
+        from rl_deploy_bench.exporter.torchscript_export import (
+            TorchScriptConfig,
+            TorchScriptInference,
+            export_to_torchscript,
+            verify_torchscript_export,
+        )
+
+        ts_path = os.path.join(tmp_dir, "policy.pt")
+        with warnings.catch_warnings():
+            # torch.jit.* warns on Python 3.14+ (legacy path); the functionality
+            # itself works on this build, so silence only that warning.
+            warnings.simplefilter("ignore", FutureWarning)
+            export_to_torchscript(
+                policy, obs_shape, ts_path, config=TorchScriptConfig(optimize=False)
+            )
+            assert os.path.exists(ts_path)
+
+            v = verify_torchscript_export(ts_path, policy, obs_shape, num_samples=8, atol=1e-5)
+            assert bool(v["passed"]) is True, v
+
+            ti = TorchScriptInference(ts_path)
+
+        # Same-input match against the original PyTorch model.
+        rng = np.random.default_rng(0)
+        x = rng.standard_normal((5, *obs_shape)).astype(np.float32)
+        with torch.no_grad():
+            torch_out = policy(torch.from_numpy(x)).numpy()
+        res = ti.infer(x)
+        assert isinstance(res.actions, np.ndarray)
+        assert isinstance(res.latency_ms, float)
+        assert np.allclose(res.actions, torch_out, atol=1e-5), float(
+            np.max(np.abs(res.actions - torch_out))
+        )
+
+        # Unified duck interface: provider info consumed by benchmark_latency.
+        info = ti.get_provider_info()
+        assert info["backend"] == "torchscript"
+        assert info["device"] == "cpu"
+
+        # benchmark_latency must run end-to-end without AttributeError on the
+        # TorchScript runtime.
+        bench = benchmark_latency(ti, obs_shape, num_warmup=2, num_runs=5)
+        assert bench.latency.num_runs == 5
+        assert bench.model_info["backend"] == "torchscript"
 
 
 if __name__ == "__main__":

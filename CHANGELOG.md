@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Markdown report latency table now includes a P90 column, matching the CLI table and HTML chart.
 - Top-level `rl_deploy_bench` package now re-exports the public Python API (`export_to_onnx`, `dynamic_quantize`, `static_quantize`, `convert_onnx_to_fp16`, `benchmark_latency`, `generate_html_report`, `OnnxRuntimeInference`, etc.) as shown in the README.
 - TorchScript non-ASCII path fallback now copies to a unique temporary file (cleaned up after load) instead of a fixed shared path.
+- `TorchScriptInference` now implements the unified inference duck-interface: `infer()` returns `InferenceResult` (`.actions` / `.latency_ms`) and `get_provider_info()` exists, so it can be passed to `benchmark_latency()` and the accuracy/quantization evaluators like `OnnxRuntimeInference`.
+- TorchScript export (`torch.jit.trace`/`freeze`/`optimize_for_inference`) is documented as targeting **legacy PyTorch** deployments: on Python 3.14+ PyTorch emits `FutureWarning`; the forward direction is `torch.export` / `torch.compile`, and the ONNX export path is recommended for new projects.
 - Removed the `/sys/class/gpio/export` heuristic from Jetson detection (it exists on many non-Jetson Linux systems).
 
 ## [1.0.0] - 2026-08-31
