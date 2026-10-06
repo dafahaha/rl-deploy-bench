@@ -11,6 +11,7 @@ is unacceptable or where only the C++ LibTorch runtime is available.
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
@@ -206,8 +207,6 @@ class TorchScriptInference:
             with torch.no_grad():
                 _ = self.model(obs_tensor)
             self._warmed_up = True
-
-        import time
 
         start = time.perf_counter()
         with torch.no_grad():

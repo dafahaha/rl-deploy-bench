@@ -27,13 +27,26 @@ class NvidiaGPUMonitor(BaseMonitor):
             import pynvml
 
             pynvml.nvmlInit()
-            self._handle = pynvml.nvmlDeviceGetHandleByIndex(self.gpu_index)
-            self._initialized = True
         except Exception as e:
             raise RuntimeError(
                 f"Failed to initialize pynvml for GPU {self.gpu_index}: {e}. "
                 "Install with: pip install nvidia-ml-py"
             ) from e
+
+        # nvmlInit() has opened an NVML session. If getting the handle now
+        # fails (e.g. gpu_index out of range), close that session before
+        # raising: _initialized stays False, so stop() would otherwise no-op
+        # and the opened session leaks. Mirrors the finally-based cleanup in
+        # utils/platform.py.
+        try:
+            self._handle = pynvml.nvmlDeviceGetHandleByIndex(self.gpu_index)
+        except Exception as e:
+            pynvml.nvmlShutdown()
+            raise RuntimeError(
+                f"Failed to initialize pynvml for GPU {self.gpu_index}: {e}. "
+                "Install with: pip install nvidia-ml-py"
+            ) from e
+        self._initialized = True
 
     def stop(self) -> None:
         """Shutdown pynvml."""

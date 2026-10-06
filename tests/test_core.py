@@ -124,6 +124,50 @@ class TestPlatformDetection:
         assert shutdown_calls == [1]
 
 
+class TestNvidiaGPUMonitor:
+    def test_start_shuts_down_nvml_when_get_handle_raises(self, monkeypatch):
+        """R6-建议-2: after nvmlInit() succeeds, if
+        nvmlDeviceGetHandleByIndex() raises, the opened NVML session must be
+        shut down before the RuntimeError propagates. _initialized stays False,
+        so stop() would otherwise no-op and leak the session on every
+        misconfigured gpu_index (same leak class fixed in utils/platform.py)."""
+        import types
+
+        from rl_deploy_bench.monitor.nvidia_gpu import NvidiaGPUMonitor
+
+        shutdown_calls = []
+
+        class _FakeNVML:
+            @staticmethod
+            def nvmlInit():
+                pass
+
+            @staticmethod
+            def nvmlShutdown():
+                shutdown_calls.append(1)
+
+            @staticmethod
+            def nvmlDeviceGetHandleByIndex(index):
+                raise RuntimeError("simulated handle failure")
+
+        fake = types.ModuleType("pynvml")
+        fake.nvmlInit = _FakeNVML.nvmlInit
+        fake.nvmlShutdown = _FakeNVML.nvmlShutdown
+        fake.nvmlDeviceGetHandleByIndex = _FakeNVML.nvmlDeviceGetHandleByIndex
+        monkeypatch.setitem(sys.modules, "pynvml", fake)
+
+        monitor = NvidiaGPUMonitor(gpu_index=0)
+        with pytest.raises(RuntimeError, match="Failed to initialize pynvml"):
+            monitor.start()
+        # The session opened by nvmlInit() was closed on the error path.
+        assert shutdown_calls == [1]
+        # _initialized stayed False, so stop() is a safe no-op and must not
+        # double-shutdown.
+        assert monitor._initialized is False
+        monitor.stop()
+        assert shutdown_calls == [1]
+
+
 # ============================================================
 # Model export tests
 # ============================================================
@@ -804,6 +848,33 @@ class TestReportGeneration:
         # on a single table row.
         assert "line1 line2" in content
         assert "line1\nline2" not in content
+
+    def test_markdown_report_title_folds_newlines(self, policy, obs_shape, tmp_dir):
+        """R6-应改-1: the top-level title `# {title}` must go through
+        _escape_pipe like the per-model `### {name}` headings. A newline in the
+        title must not inject a real standalone Markdown section (the HTML side
+        already html.escape's the title, so this closes the MD/HTML gap)."""
+        from rl_deploy_bench.benchmark.latency import benchmark_latency
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.reporter.markdown import generate_markdown_report
+        from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+        inference = OnnxRuntimeInference(onnx_path)
+        result = benchmark_latency(inference, obs_shape, num_warmup=5, num_runs=20)
+
+        report_path = os.path.join(tmp_dir, "report.md")
+        output = generate_markdown_report(report_path, [result], ["Model"], title="X\n## INJECTED")
+        with open(output, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        lines = content.splitlines()
+        # The newline folds into the H1 line; no real standalone H2 heading
+        # (`## INJECTED` at column 0) may appear.
+        assert not any(line.startswith("## INJECTED") for line in lines)
+        # The folded title sits on the single H1 line.
+        assert lines[0] == "# X ## INJECTED"
 
     def test_latency_distribution_data_includes_p90(self):
         """R3-吹毛-2: the plot-data helper must expose p90 like every other

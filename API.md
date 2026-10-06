@@ -77,11 +77,78 @@ an affine transform and verification spuriously fails.
 
 **Returns:** `{"passed": bool, "max_abs_diff": float, "mean_abs_diff": float, ...}`
 
+### TorchScript
+
+TorchScript export/inference lives in the `rl_deploy_bench.exporter` subpackage
+(it is not re-exported from the top-level `rl_deploy_bench` package — import it
+from `rl_deploy_bench.exporter`). It uses the legacy `torch.jit` trace/script
+path, which works on CPU/CUDA but emits a `FutureWarning` on Python 3.14+; for
+new projects prefer ONNX. `TorchScriptInference` implements the same duck
+interface as `OnnxRuntimeInference`, so it can be passed straight to
+`benchmark_latency` / `evaluate_*` unchanged.
+
+#### `TorchScriptConfig(method="trace", optimize=True, strict=True)`
+
+Configuration for TorchScript export.
+
+- `method`: `'trace'` or `'script'`
+- `optimize`: load, `freeze`, and `optimize_for_inference` the traced module
+- `strict`: strict tracing mode passed to `torch.jit.trace`
+
+#### `export_to_torchscript(model, observation_shape, output_path, config=None, example_observation=None) -> str`
+
+Export a PyTorch model to TorchScript (`.pt`).
+
+```python
+from rl_deploy_bench.exporter import export_to_torchscript, TorchScriptConfig
+
+ts_path = export_to_torchscript(
+    policy, observation_shape=(4,), output_path="policy.pt",
+    config=TorchScriptConfig(method="trace"),
+)
+```
+
+#### `verify_torchscript_export(torchscript_path, model, observation_shape, num_samples=100, atol=1e-5) -> dict`
+
+Verify the exported TorchScript matches the original PyTorch model on random
+observations.
+
+**Returns:** `{"passed": bool, "max_abs_diff": float, "mean_abs_diff": float, "num_samples": int, "tolerance": float}`
+
+#### `TorchScriptInference(model_path, device="cpu")`
+
+Load and run a TorchScript model. Mirrors `OnnxRuntimeInference`: `infer()`
+returns an `InferenceResult` with `.actions` (np.ndarray) and `.latency_ms`
+(float), and `get_provider_info()` returns a dict.
+
+```python
+from rl_deploy_bench.exporter import TorchScriptInference
+
+inf = TorchScriptInference("policy.pt")
+res = inf.infer(observation)   # InferenceResult(actions, latency_ms)
+inf.warmup(num_runs=10)
+inf.get_provider_info()         # {"backend": "torchscript", "device": "cpu", ...}
+```
+
+**Methods:**
+- `infer(observation) -> InferenceResult`: run single inference; accepts a flat
+  `(*obs_shape)` vector or a `(batch, *obs_shape)` batch
+- `warmup(num_runs=10, observation_shape=None)`: warm up the model
+- `get_provider_info() -> dict`: `backend` / `device` / `active_providers` /
+  `model_path` info
+
+#### `compare_onnx_torchscript(onnx_path, torchscript_path, observation_shape, num_samples=100) -> dict`
+
+Cross-check that the ONNX and TorchScript exports of the same policy produce
+matching actions.
+
+**Returns:** `{"max_abs_diff": float, "mean_abs_diff": float, "num_samples": int, "outputs_match": bool}`
+
 ---
 
 ## Inference Runtime
 
-### `OnnxRuntimeInference(model_path, providers=None)`
+### `OnnxRuntimeInference(model_path, providers=None, provider_options=None)`
 
 ONNX Runtime inference engine.
 
@@ -92,6 +159,13 @@ inference = OnnxRuntimeInference("model.onnx")
 result = inference.infer(observation)  # InferenceResult(actions, latency_ms)
 inference.warmup(num_runs=10)
 ```
+
+`providers` is the ordered list of execution provider names (e.g.
+`["CUDAExecutionProvider", "CPUExecutionProvider"]`); when `None`, CUDA is
+auto-selected if available. `provider_options` is an optional list of
+per-provider option dicts passed straight to `onnxruntime.InferenceSession`
+(one entry per provider, in the same order), e.g. TensorRT/graph-optimization
+knobs; leave it `None` for the defaults.
 
 **Methods:**
 - `infer(observation) -> InferenceResult`: Run single inference

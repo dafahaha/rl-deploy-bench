@@ -52,8 +52,10 @@ def generate_markdown_report(
 
     lines = []
 
-    # Header
-    lines.append(f"# {title}")
+    # Header. The title goes through _escape_pipe like every other
+    # user-controlled string: a newline in title would otherwise inject an
+    # arbitrary Markdown section (e.g. "X\n## INJECTED") at the top level.
+    lines.append(f"# {_escape_pipe(title)}")
     lines.append("")
     lines.append(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append("")
