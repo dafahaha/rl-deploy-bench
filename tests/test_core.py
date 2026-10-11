@@ -1078,6 +1078,26 @@ class TestCalibrationData:
         assert "max" in stats
         assert "per_dimension_mean" in stats
 
+    def test_calibration_rejecting_filter_raises_instead_of_looping(self):
+        """S3: when observation_filter rejects 100% of observations and
+        num_episodes is None, the generator must terminate with a clear error
+        instead of spinning the outer while forever."""
+        from rl_deploy_bench.benchmark.calibration import (
+            CalibrationConfig,
+            EnvironmentCalibrationGenerator,
+        )
+
+        config = CalibrationConfig(
+            num_samples=50,
+            collection_strategy="random",
+            seed=42,
+            max_steps_per_episode=10,
+            observation_filter=lambda obs: False,  # reject everything
+        )
+        generator = EnvironmentCalibrationGenerator("CartPole-v1", config=config)
+        with pytest.raises(RuntimeError, match="rejected every observation"):
+            generator.generate()
+
 
 # ============================================================
 # CLI integration tests

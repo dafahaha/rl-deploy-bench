@@ -143,6 +143,7 @@ class EnvironmentCalibrationGenerator:
 
         try:
             while len(observations) < config.num_samples:
+                collected_before = len(observations)
                 obs, _ = env.reset(seed=config.seed + episodes_completed)
 
                 if config.include_initial_observations:
@@ -164,6 +165,21 @@ class EnvironmentCalibrationGenerator:
 
                     if terminated or truncated:
                         break
+
+                # Progress guard: if a whole episode accepted zero observations and
+                # we still need samples, the observation_filter is rejecting
+                # everything. With num_episodes=None the outer while would then spin
+                # forever resetting the env; fail loudly instead.
+                if (
+                    len(observations) < config.num_samples
+                    and len(observations) == collected_before
+                ):
+                    raise RuntimeError(
+                        "Calibration observation_filter rejected every observation "
+                        f"during a full episode (collected {len(observations)}/"
+                        f"{config.num_samples}). Relax the filter, set num_episodes to "
+                        "bound the run, or lower num_samples."
+                    )
 
                 episodes_completed += 1
 
