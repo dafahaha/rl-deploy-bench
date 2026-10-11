@@ -1160,12 +1160,11 @@ class TestCalibrationData:
 
         def filter_fn(obs):
             calls["n"] += 1
-            # Reject the first handful of observations (at most the first 2
-            # short episodes) and then accept everything. The threshold is
-            # small enough that even if CartPole episodes terminate early, we
-            # never reach 3 consecutive dry episodes before the filter starts
-            # accepting.
-            return calls["n"] > 4
+            # Reject the first couple of observations (at most the first dry
+            # episode) and then accept everything. The threshold is small enough
+            # that even if CartPole episodes terminate immediately, we never
+            # reach 3 consecutive dry episodes before the filter starts accepting.
+            return calls["n"] > 2
 
         config = CalibrationConfig(
             num_samples=10,
