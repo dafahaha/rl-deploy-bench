@@ -138,6 +138,8 @@ class EnvironmentCalibrationGenerator:
         observations = []
         episodes_completed = 0
         total_steps = 0
+        consecutive_dry_episodes = 0
+        max_consecutive_dry_episodes = 3
 
         env = gym.make(self.env_name)
 
@@ -168,14 +170,38 @@ class EnvironmentCalibrationGenerator:
 
                 # Progress guard: if a whole episode accepted zero observations and
                 # we still need samples, the observation_filter is rejecting
-                # everything. With num_episodes=None the outer while would then spin
-                # forever resetting the env; fail loudly instead.
-                if len(observations) < config.num_samples and len(observations) == collected_before:
+                # everything.
+                #
+                # When num_episodes is set, the outer loop terminates on its own
+                # once episodes_completed >= num_episodes, so we must NOT raise
+                # here: the user explicitly chose to bound the run and accept a
+                # shorter dataset. Raising before that bound would also make the
+                # old error message ("set num_episodes to bound the run") a lie,
+                # since num_episodes did not actually suppress the raise.
+                #
+                # When num_episodes is None the outer while would spin forever
+                # resetting the env. We only raise after several *consecutive*
+                # dry episodes, so a single unlucky first episode (e.g. a
+                # threshold filter that rejects an early CartPole episode whose
+                # pole starts on the "wrong" side) does not abort the run.
+                if len(observations) == collected_before:
+                    consecutive_dry_episodes += 1
+                else:
+                    consecutive_dry_episodes = 0
+
+                if (
+                    config.num_episodes is None
+                    and consecutive_dry_episodes >= max_consecutive_dry_episodes
+                    and len(observations) < config.num_samples
+                ):
                     raise RuntimeError(
                         "Calibration observation_filter rejected every observation "
-                        f"during a full episode (collected {len(observations)}/"
-                        f"{config.num_samples}). Relax the filter, set num_episodes to "
-                        "bound the run, or lower num_samples."
+                        f"for {max_consecutive_dry_episodes} consecutive episodes "
+                        f"(collected {len(observations)}/{config.num_samples}). "
+                        "Relax the filter or lower num_samples. If you want to "
+                        "bound the run without an error, set num_episodes: the "
+                        "generator will then stop after that many episodes even if "
+                        "num_samples is not reached."
                     )
 
                 episodes_completed += 1
@@ -231,13 +257,17 @@ class EnvironmentCalibrationGenerator:
             raise ValueError(f"Unknown collection strategy: {strategy}")
 
     def _passes_filter(self, obs: np.ndarray) -> bool:
-        """Check if observation passes the optional filter."""
+        """Check if observation passes the optional filter.
+
+        A filter that raises is treated as a user bug: the exception propagates
+        immediately (fail-closed) rather than being silently swallowed and the
+        observation accepted. This surfaces filter bugs fast during calibration
+        instead of silently collecting unfiltered data as if the filter had
+        returned ``True``.
+        """
         if self.config.observation_filter is None:
             return True
-        try:
-            return bool(self.config.observation_filter(obs))
-        except Exception:
-            return True
+        return bool(self.config.observation_filter(obs))
 
 
 class SB3PolicyCalibrationGenerator(EnvironmentCalibrationGenerator):
