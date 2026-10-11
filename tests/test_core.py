@@ -1230,6 +1230,132 @@ class TestCalibrationData:
         assert dataset.collection_stats["episodes_completed"] == 3
         assert fake_env.closed
 
+    def test_calibration_guard_raises_exactly_on_third_consecutive_dry_episode(self, monkeypatch):
+        """M10 regression: the guard must raise when consecutive_dry_episodes
+        reaches 3 (>=3), not 4 (>3). With an always-rejecting filter and
+        num_episodes=None, RuntimeError must fire at the 3rd dry episode, not
+        the 4th.
+        """
+        import gymnasium as gym
+
+        from rl_deploy_bench.benchmark.calibration import (
+            CalibrationConfig,
+            EnvironmentCalibrationGenerator,
+        )
+
+        class _ScriptedEnv:
+            def __init__(self, episode_lengths):
+                self._lengths = list(episode_lengths)
+                self._ep_idx = -1
+                self._step_in_ep = 0
+                self._next_id = 0
+                self.closed = False
+
+            def reset(self, seed=None, options=None):
+                self._ep_idx += 1
+                self._step_in_ep = 0
+                self._next_id += 1
+                return np.array([self._next_id], dtype=np.float32), {}
+
+            def step(self, action):
+                self._step_in_ep += 1
+                self._next_id += 1
+                obs = np.array([self._next_id], dtype=np.float32)
+                length = self._lengths[self._ep_idx] if self._ep_idx < len(self._lengths) else 1
+                terminated = self._step_in_ep >= length
+                return obs, 0.0, terminated, False, {}
+
+            def close(self):
+                self.closed = True
+
+        # All episodes are 1-step and fully dry (filter rejects everything).
+        fake_env = _ScriptedEnv(episode_lengths=[])
+        monkeypatch.setattr(gym, "make", lambda *args, **kwargs: fake_env)
+
+        config = CalibrationConfig(
+            num_samples=10,
+            collection_strategy="policy",
+            seed=42,
+            max_steps_per_episode=200,
+            observation_filter=lambda obs: False,  # reject everything
+        )
+        generator = EnvironmentCalibrationGenerator(
+            "ScriptedFake-v0", policy=lambda obs: 0, config=config
+        )
+        with pytest.raises(RuntimeError, match="rejected every observation"):
+            generator.generate()
+        # _ep_idx is 0-indexed; after 3 resets (episodes 0,1,2) it == 2.
+        # If the guard were >3 (M10), it would take a 4th episode and _ep_idx==3.
+        assert fake_env._ep_idx == 2
+        assert fake_env.closed
+
+    def test_calibration_productive_episode_resets_consecutive_dry_counter(self, monkeypatch):
+        """M11 regression: a productive episode must reset the
+        consecutive_dry_episodes counter. Sequence: dry, dry, productive,
+        then dry, dry, dry. Without the reset, the guard would fire at the
+        4th episode; with the reset, it must fire only at the 6th episode
+        (3 dry after the productive one).
+        """
+        import gymnasium as gym
+
+        from rl_deploy_bench.benchmark.calibration import (
+            CalibrationConfig,
+            EnvironmentCalibrationGenerator,
+        )
+
+        class _ScriptedEnv:
+            def __init__(self, episode_lengths):
+                self._lengths = list(episode_lengths)
+                self._ep_idx = -1
+                self._step_in_ep = 0
+                self._next_id = 0
+                self.closed = False
+
+            def reset(self, seed=None, options=None):
+                self._ep_idx += 1
+                self._step_in_ep = 0
+                self._next_id += 1
+                return np.array([self._next_id], dtype=np.float32), {}
+
+            def step(self, action):
+                self._step_in_ep += 1
+                self._next_id += 1
+                obs = np.array([self._next_id], dtype=np.float32)
+                length = self._lengths[self._ep_idx] if self._ep_idx < len(self._lengths) else 1
+                terminated = self._step_in_ep >= length
+                return obs, 0.0, terminated, False, {}
+
+            def close(self):
+                self.closed = True
+
+        # Episodes 0,1: 1-step (dry). Episode 2: 4-step (productive, accepts).
+        # Episodes 3,4,5+: 1-step (dry again).
+        fake_env = _ScriptedEnv(episode_lengths=[1, 1, 4])
+        monkeypatch.setattr(gym, "make", lambda *args, **kwargs: fake_env)
+
+        def filter_fn(obs):
+            v = float(obs[0])
+            # Reject ids 1-4 (dry eps 0,1) and 9+ (dry eps 3+).
+            # Accept ids 5-8 (productive ep 2).
+            return 5.0 <= v <= 8.0
+
+        config = CalibrationConfig(
+            num_samples=10,
+            collection_strategy="policy",
+            seed=42,
+            max_steps_per_episode=200,
+            observation_filter=filter_fn,
+        )
+        generator = EnvironmentCalibrationGenerator(
+            "ScriptedFake-v0", policy=lambda obs: 0, config=config
+        )
+        with pytest.raises(RuntimeError, match="rejected every observation"):
+            generator.generate()
+        # Episodes started: 0,1 (dry), 2 (productive), 3,4,5 (dry) = 6 total.
+        # _ep_idx == 5 (0-indexed). Without reset, raise would have fired at ep 3.
+        assert fake_env._ep_idx == 5
+        assert fake_env.closed
+
     def test_calibration_with_num_episodes_and_rejecting_filter_does_not_raise(self):
         """F1 regression: when num_episodes is set, the guard must never raise.
         The episode upper bound terminates the loop even if the filter rejects
