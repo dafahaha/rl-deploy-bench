@@ -298,9 +298,7 @@ class TestModelExport:
         high = np.array([3.0, 5.0], dtype=np.float32)
 
         # Rows of pre-unscale action fed straight into the wrapper.
-        pre = torch.tensor(
-            [[-1.0, -1.0], [0.0, 0.0], [1.0, 1.0], [-0.5, 0.5]], dtype=torch.float32
-        )
+        pre = torch.tensor([[-1.0, -1.0], [0.0, 0.0], [1.0, 1.0], [-0.5, 0.5]], dtype=torch.float32)
         policy = _ConstantPolicy(pre)
         wrapped = OnnxablePolicy(policy, action_dim=2)
         wrapped.set_action_bounds(low, high)
@@ -313,10 +311,10 @@ class TestModelExport:
         # source formula):  out = low + (pre + 1) * 0.5 * (high - low)
         expected = np.array(
             [
-                [-3.0, 1.0],   # pre=-1 -> low
-                [0.0, 3.0],    # pre=0 -> midpoint = (low+high)/2
-                [3.0, 5.0],    # pre=+1 -> high
-                [-1.5, 4.0],   # pre=-0.5/0.5 -> low + 0.25*(high-low)
+                [-3.0, 1.0],  # pre=-1 -> low
+                [0.0, 3.0],  # pre=0 -> midpoint = (low+high)/2
+                [3.0, 5.0],  # pre=+1 -> high
+                [-1.5, 4.0],  # pre=-0.5/0.5 -> low + 0.25*(high-low)
             ],
             dtype=np.float32,
         )

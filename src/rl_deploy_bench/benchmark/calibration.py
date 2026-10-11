@@ -170,10 +170,7 @@ class EnvironmentCalibrationGenerator:
                 # we still need samples, the observation_filter is rejecting
                 # everything. With num_episodes=None the outer while would then spin
                 # forever resetting the env; fail loudly instead.
-                if (
-                    len(observations) < config.num_samples
-                    and len(observations) == collected_before
-                ):
+                if len(observations) < config.num_samples and len(observations) == collected_before:
                     raise RuntimeError(
                         "Calibration observation_filter rejected every observation "
                         f"during a full episode (collected {len(observations)}/"
