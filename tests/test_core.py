@@ -269,6 +269,74 @@ class TestModelExport:
             assert np.all(onnx_out >= low - 1e-5)
             assert np.all(onnx_out <= high + 1e-5)
 
+    def test_action_bounds_unscale_matches_hand_computed_affine(self):
+        """S1 / M1 regression: the tanh->[low, high] unscale must be checked
+        against hand-computed values, not only ONNX-vs-wrapper round-trip.
+
+        The round-trip tests feed the same wrapper on both sides, so any affine
+        error in the unscale that is self-consistent across the traced graph and
+        the in-test wrapper (e.g. the 0.5 scale factor becoming 1.0) is invisible
+        -- and torch.clamp then clips the over-scaled output back into [low, high].
+        Here we hand the wrapper a *constant* policy returning a known pre-unscale
+        action and assert exact, independently-written numeric anchors.
+        """
+        from rl_deploy_bench.exporter.onnx_export import OnnxablePolicy
+
+        class _ConstantPolicy(nn.Module):
+            """Returns a fixed pre-unscale action regardless of the observation."""
+
+            def __init__(self, action):
+                super().__init__()
+                self._action = action
+
+            def forward(self, x):
+                return self._action.expand(x.shape[0], -1).clone()
+
+        # Asymmetric bounds: positive low on dim 1, negative low on dim 0, so a
+        # low/high swap or a symmetric-normalization mistake cannot cancel out.
+        low = np.array([-3.0, 1.0], dtype=np.float32)
+        high = np.array([3.0, 5.0], dtype=np.float32)
+
+        # Rows of pre-unscale action fed straight into the wrapper.
+        pre = torch.tensor(
+            [[-1.0, -1.0], [0.0, 0.0], [1.0, 1.0], [-0.5, 0.5]], dtype=torch.float32
+        )
+        policy = _ConstantPolicy(pre)
+        wrapped = OnnxablePolicy(policy, action_dim=2)
+        wrapped.set_action_bounds(low, high)
+        wrapped.eval()
+
+        with torch.no_grad():
+            out = wrapped(torch.zeros(pre.shape[0], 4)).numpy()
+
+        # Hand-computed anchors (written out as literals, not by re-using the
+        # source formula):  out = low + (pre + 1) * 0.5 * (high - low)
+        expected = np.array(
+            [
+                [-3.0, 1.0],   # pre=-1 -> low
+                [0.0, 3.0],    # pre=0 -> midpoint = (low+high)/2
+                [3.0, 5.0],    # pre=+1 -> high
+                [-1.5, 4.0],   # pre=-0.5/0.5 -> low + 0.25*(high-low)
+            ],
+            dtype=np.float32,
+        )
+        assert np.allclose(out, expected, atol=1e-6), (out, expected)
+
+    def test_action_bounds_unscale_without_normalize_is_identity(self):
+        """S1 companion: when no bounds are set, the wrapper must return the
+        policy action unchanged (no accidental unscale)."""
+        from rl_deploy_bench.exporter.onnx_export import OnnxablePolicy
+
+        class _ConstantPolicy(nn.Module):
+            def forward(self, x):
+                return torch.full((x.shape[0], 2), 0.37)
+
+        wrapped = OnnxablePolicy(_ConstantPolicy())
+        wrapped.eval()
+        with torch.no_grad():
+            out = wrapped(torch.zeros(3, 4)).numpy()
+        assert np.allclose(out, 0.37, atol=1e-6)
+
 
 # ============================================================
 # Inference runtime tests
