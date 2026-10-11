@@ -335,6 +335,53 @@ class TestModelExport:
             out = wrapped(torch.zeros(3, 4)).numpy()
         assert np.allclose(out, 0.37, atol=1e-6)
 
+    def test_action_bounds_clips_pre_unscale_actions_outside_range(self):
+        """F4 / M7 regression: OnnxablePolicy must torch.clamp the un-scaled
+        action to [low, high]. Feeding a pre-unscale action outside [-1, 1]
+        (e.g. 1.5 or -2.0) must yield exactly high / low, not the value the
+        affine formula would extrapolate to.
+
+        Without the clamp, pre=1.5 on dim 0 (low=-3, high=3) would produce
+        -3 + (1.5+1)*0.5*6 = 4.5, which lies above high=3. The clamp must
+        bring it back to 3.0.
+        """
+        from rl_deploy_bench.exporter.onnx_export import OnnxablePolicy
+
+        class _ConstantPolicy(nn.Module):
+            def __init__(self, action):
+                super().__init__()
+                self._action = action
+
+            def forward(self, x):
+                return self._action.expand(x.shape[0], -1).clone()
+
+        low = np.array([-3.0, 1.0], dtype=np.float32)
+        high = np.array([3.0, 5.0], dtype=np.float32)
+
+        # Rows: pre=1.5 (over-extrapolates above high), pre=-2.0 (below low).
+        pre = torch.tensor([[1.5, 1.5], [-2.0, -2.0]], dtype=torch.float32)
+        policy = _ConstantPolicy(pre)
+        wrapped = OnnxablePolicy(policy, action_dim=2)
+        wrapped.set_action_bounds(low, high)
+        wrapped.eval()
+
+        with torch.no_grad():
+            out = wrapped(torch.zeros(2, 4)).numpy()
+
+        # Hand-computed anchors: unscale then clamp.
+        # pre=1.5: dim0 -> -3 + 1.25*6 = 4.5 -> clamp 3.0;
+        #          dim1 ->  1 + 1.25*4 = 6.0 -> clamp 5.0
+        # pre=-2.0: dim0 -> -3 + (-0.5)*6 = -6.0 -> clamp -3.0;
+        #           dim1 ->  1 + (-0.5)*4 = -1.0 -> clamp 1.0
+        expected = np.array(
+            [
+                [3.0, 5.0],
+                [-3.0, 1.0],
+            ],
+            dtype=np.float32,
+        )
+        assert np.allclose(out, expected, atol=1e-6), (out, expected)
+
 
 # ============================================================
 # Inference runtime tests
@@ -557,7 +604,7 @@ class TestAccuracyComparison:
 class TestQuantization:
     def test_dynamic_quantize_creates_file(self, policy, obs_shape, tmp_dir):
         from rl_deploy_bench.exporter.onnx_export import export_to_onnx
-        from rl_deploy_bench.quantizer.int8 import dynamic_quantize, get_model_size_mb
+        from rl_deploy_bench.quantizer.int8 import dynamic_quantize
 
         onnx_path = os.path.join(tmp_dir, "test.onnx")
         export_to_onnx(policy, obs_shape, onnx_path)
@@ -1095,6 +1142,113 @@ class TestCalibrationData:
         generator = EnvironmentCalibrationGenerator("CartPole-v1", config=config)
         with pytest.raises(RuntimeError, match="rejected every observation"):
             generator.generate()
+
+    def test_calibration_intermittent_dry_episode_does_not_raise_with_num_episodes_none(self):
+        """F1 regression: a filter that rejects whole early episodes but
+        accepts later ones must not raise under num_episodes=None. The
+        generator should keep going until it collects num_samples.
+
+        The guard only fires after 3 *consecutive* dry episodes, so a couple
+        of dry early episodes followed by productive ones must not abort.
+        """
+        from rl_deploy_bench.benchmark.calibration import (
+            CalibrationConfig,
+            EnvironmentCalibrationGenerator,
+        )
+
+        calls = {"n": 0}
+
+        def filter_fn(obs):
+            calls["n"] += 1
+            # Reject the first handful of observations (at most the first 2
+            # short episodes) and then accept everything. The threshold is
+            # small enough that even if CartPole episodes terminate early, we
+            # never reach 3 consecutive dry episodes before the filter starts
+            # accepting.
+            return calls["n"] > 4
+
+        config = CalibrationConfig(
+            num_samples=10,
+            collection_strategy="random",
+            seed=42,
+            max_steps_per_episode=10,
+            observation_filter=filter_fn,
+        )
+        generator = EnvironmentCalibrationGenerator("CartPole-v1", config=config)
+        dataset = generator.generate()
+        assert len(dataset) == 10
+
+    def test_calibration_with_num_episodes_and_rejecting_filter_does_not_raise(self):
+        """F1 regression: when num_episodes is set, the guard must never raise.
+        The episode upper bound terminates the loop even if the filter rejects
+        everything; the user explicitly chose to bound the run and accept a
+        shorter dataset.
+        """
+        from rl_deploy_bench.benchmark.calibration import (
+            CalibrationConfig,
+            EnvironmentCalibrationGenerator,
+        )
+
+        config = CalibrationConfig(
+            num_samples=50,
+            collection_strategy="random",
+            seed=42,
+            max_steps_per_episode=10,
+            num_episodes=3,
+            observation_filter=lambda obs: False,  # reject everything
+        )
+        generator = EnvironmentCalibrationGenerator("CartPole-v1", config=config)
+        dataset = generator.generate()
+        # No RuntimeError; dataset is shorter than num_samples.
+        assert len(dataset) <= 50
+        assert dataset.collection_stats["episodes_completed"] == 3
+
+    def test_calibration_filter_exception_propagates(self):
+        """F3 regression: a user-supplied observation_filter that raises must
+        have the exception propagate (fail-closed), not be swallowed and the
+        observation silently accepted.
+        """
+        from rl_deploy_bench.benchmark.calibration import (
+            CalibrationConfig,
+            EnvironmentCalibrationGenerator,
+        )
+
+        def bad_filter(obs):
+            raise ValueError("boom from user filter")
+
+        config = CalibrationConfig(
+            num_samples=10,
+            collection_strategy="random",
+            seed=42,
+            max_steps_per_episode=5,
+            observation_filter=bad_filter,
+        )
+        generator = EnvironmentCalibrationGenerator("CartPole-v1", config=config)
+        with pytest.raises(ValueError, match="boom from user filter"):
+            generator.generate()
+
+    def test_calibration_load_rejects_object_arrays(self, tmp_dir):
+        """F6 / M9 regression: CalibrationDataset.load uses allow_pickle=False.
+        An npz containing an object array must be refused, not silently loaded
+        via pickle.
+        """
+        from rl_deploy_bench.benchmark.calibration import CalibrationDataset
+
+        path = os.path.join(tmp_dir, "with_object_array.npz")
+        obj_arr = np.array([{"bad": 1}, {"also_bad": 2}], dtype=object)
+        np.savez(path, observations=obj_arr)
+
+        # The underlying numpy load with allow_pickle=False must refuse to read
+        # the object array. NpzFile is lazy, so accessing the key is what
+        # triggers the pickle guard.
+        with pytest.raises(ValueError, match="pickle"):
+            with np.load(path, allow_pickle=False) as data:
+                _ = data["observations"]
+
+        # CalibrationDataset.load reads the observations key internally, so it
+        # must also refuse it.
+        with pytest.raises(ValueError, match="pickle"):
+            CalibrationDataset.load(path)
 
 
 # ============================================================
