@@ -19,24 +19,26 @@ import tempfile
 # Add src to path if running from repo
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-import numpy as np
-import torch
-import torch.nn as nn
+import numpy as np  # noqa: E402
+import torch.nn as nn  # noqa: E402
 
-from rl_deploy_bench import __version__
-from rl_deploy_bench.benchmark.accuracy import compare_actions, generate_test_observations
-from rl_deploy_bench.benchmark.latency import benchmark_latency
-from rl_deploy_bench.exporter import export_to_onnx, export_to_torchscript
-from rl_deploy_bench.quantizer import (
+from rl_deploy_bench import __version__  # noqa: E402
+from rl_deploy_bench.benchmark.accuracy import (  # noqa: E402
+    compare_actions,
+    generate_test_observations,
+)
+from rl_deploy_bench.benchmark.latency import benchmark_latency  # noqa: E402
+from rl_deploy_bench.exporter import export_to_onnx, export_to_torchscript  # noqa: E402
+from rl_deploy_bench.quantizer import (  # noqa: E402
     convert_onnx_to_fp16,
     dynamic_quantize,
     evaluate_fp16_impact,
     evaluate_quantization,
 )
-from rl_deploy_bench.reporter.html import generate_html_report
-from rl_deploy_bench.reporter.markdown import generate_markdown_report
-from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
-from rl_deploy_bench.utils.platform import detect_platform
+from rl_deploy_bench.reporter.html import generate_html_report  # noqa: E402
+from rl_deploy_bench.reporter.markdown import generate_markdown_report  # noqa: E402
+from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference  # noqa: E402
+from rl_deploy_bench.utils.platform import detect_platform  # noqa: E402
 
 
 class DemoPolicy(nn.Module):
@@ -183,11 +185,11 @@ def main():
     print_header("Demo Complete!")
     print(f"  All outputs saved to: {output_dir}")
     print(f"  Open {html_path} in your browser for interactive charts.")
-    print(f"\n  Next steps:")
-    print(f"    1. Try with your own trained RL model")
-    print(f"    2. Use 'rl-deploy-bench calibrate' for environment-based INT8 calibration")
-    print(f"    3. Check out examples/ for more workflows")
-    print(f"    4. Star the repo: https://github.com/dafahaha/rl-deploy-bench")
+    print("\n  Next steps:")
+    print("    1. Try with your own trained RL model")
+    print("    2. Use 'rl-deploy-bench calibrate' for environment-based INT8 calibration")
+    print("    3. Check out examples/ for more workflows")
+    print("    4. Star the repo: https://github.com/dafahaha/rl-deploy-bench")
     print("=" * 65)
 
 
