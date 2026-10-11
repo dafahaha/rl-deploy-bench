@@ -210,7 +210,7 @@ def evaluate_fp16_impact(
     """
     from ..benchmark.accuracy import compare_actions, generate_test_observations
     from ..runtime.onnx_runtime import OnnxRuntimeInference
-    from .int8 import compare_model_sizes
+    from .int8 import _accuracy_verdict, compare_model_sizes
 
     orig_inf = OnnxRuntimeInference(original_model_path)
     fp16_inf = OnnxRuntimeInference(fp16_model_path)
@@ -230,27 +230,24 @@ def evaluate_fp16_impact(
 
     mse_ok = acc.action_mse < mse_threshold
     cosine_ok = acc.action_cosine_similarity > cosine_threshold
+    verdict = _accuracy_verdict(mse_ok, cosine_ok)
 
-    if mse_ok and cosine_ok:
-        verdict = "pass"
+    if verdict == "pass":
         recommendation = (
             "FP16 ACCEPTABLE: Action deviation is within thresholds. "
             "FP16 deployment is safe and recommended for GPU acceleration."
         )
-    elif mse_ok:
-        verdict = "caution"
+    elif verdict == "caution" and mse_ok:
         recommendation = (
             "FP16 CAUTION: MSE acceptable but cosine similarity low. "
             "Action direction may deviate. Consider selective FP16 (keep critical layers in FP32)."
         )
-    elif cosine_ok:
-        verdict = "caution"
+    elif verdict == "caution":
         recommendation = (
             "FP16 CAUTION: Cosine similarity good but MSE exceeds threshold. "
             "Action magnitude may deviate. Verify on actual environment rollouts."
         )
     else:
-        verdict = "fail"
         recommendation = (
             "FP16 NOT RECOMMENDED: Significant action deviation. "
             "Use FP32 or selective FP16 with op_blocklist."

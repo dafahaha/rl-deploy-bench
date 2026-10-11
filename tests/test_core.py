@@ -599,6 +599,51 @@ class TestQuantization:
         assert "size_comparison" in result
         assert result["verdict"] in ("pass", "caution", "fail")
 
+    @pytest.mark.parametrize(
+        "mse_ok, cosine_ok, expected",
+        [
+            (True, True, "pass"),
+            (True, False, "caution"),
+            (False, True, "caution"),
+            (False, False, "fail"),
+        ],
+    )
+    def test_accuracy_verdict_maps_gates_to_verdict(self, mse_ok, cosine_ok, expected):
+        """S2 / M7 regression: the (mse_ok, cosine_ok) -> verdict branch must be
+        unit-tested directly. Previously it only checked `verdict in (...)`, so
+        flipping both gate conditions (or swapping the caution branches) still
+        returned an allowed string and went green."""
+        from rl_deploy_bench.quantizer.int8 import _accuracy_verdict
+
+        assert _accuracy_verdict(mse_ok, cosine_ok) == expected
+
+    def test_evaluate_quantization_recommendation_matches_verdict(self, policy, obs_shape, tmp_dir):
+        """S2 / M7: for a known near-identical pair (FP32 vs dynamic-INT8 of a
+        tiny MLP, mse ~ 1e-6, cosine ~ 1.0), both gates must evaluate good and the
+        verdict must be exactly "pass". Flipping either gate comparison would make
+        mse_within_threshold / cosine_within_threshold (and the verdict itself)
+        flip to False / "fail", which a bare `verdict in (...)` check never caught."""
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer.int8 import (
+            _accuracy_verdict,
+            dynamic_quantize,
+            evaluate_quantization,
+        )
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+        quantized_path = dynamic_quantize(onnx_path)
+
+        result = evaluate_quantization(onnx_path, quantized_path, obs_shape, num_samples=100)
+        # Known-good pair: both accuracy gates are good.
+        assert result["mse_within_threshold"] is True
+        assert result["cosine_within_threshold"] is True
+        assert result["verdict"] == "pass"
+        # And the verdict must equal what the (now asserted-good) gates imply.
+        assert result["verdict"] == _accuracy_verdict(
+            result["mse_within_threshold"], result["cosine_within_threshold"]
+        )
+
     def test_static_quantize_with_random_data(self, policy, obs_shape, tmp_dir):
         """N3 / M1 regression: static_quantize() with the random calibration
         path must not crash with 'Invalid rank' and must produce a loadable,
@@ -765,6 +810,10 @@ class TestQuantization:
         default = evaluate_fp16_impact(onnx_path, fp16_path, obs_shape, num_samples=32)
         assert default["cosine_threshold"] == 0.99
         assert default["cosine_within_threshold"] is True
+        # S2 / M7: this near-perfect pair must land on "pass", not merely on an
+        # allowed verdict string. Flipping both gates would return "fail".
+        assert default["mse_within_threshold"] is True
+        assert default["verdict"] == "pass"
 
         # An impossible cosine threshold must flip only the cosine gate, leaving
         # the MSE gate unchanged for the same model pair.
@@ -774,6 +823,9 @@ class TestQuantization:
         assert strict["cosine_threshold"] == 1.5
         assert strict["cosine_within_threshold"] is False
         assert strict["mse_within_threshold"] is default["mse_within_threshold"]
+        # With only the cosine gate bad, the verdict is exactly "caution" --
+        # neither "pass" nor "fail".
+        assert strict["verdict"] == "caution"
 
 
 # ============================================================

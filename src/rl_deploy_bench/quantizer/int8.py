@@ -337,6 +337,24 @@ def static_quantize_with_dataset(
     return os.path.abspath(output_path)
 
 
+def _accuracy_verdict(mse_ok: bool, cosine_ok: bool) -> str:
+    """Map the accuracy gates to a pass/caution/fail verdict.
+
+    Shared by ``evaluate_quantization`` and ``evaluate_fp16_impact`` so the
+    (mse_ok, cosine_ok) -> verdict branch lives in one unit-tested place:
+
+        (True,  True ) -> "pass"
+        (True,  False) -> "caution"
+        (False, True ) -> "caution"
+        (False, False) -> "fail"
+    """
+    if mse_ok and cosine_ok:
+        return "pass"
+    if not mse_ok and not cosine_ok:
+        return "fail"
+    return "caution"
+
+
 def evaluate_quantization(
     original_model_path: str,
     quantized_model_path: str,
@@ -389,33 +407,30 @@ def evaluate_quantization(
     # Determine recommendation
     mse_ok = acc.action_mse < mse_threshold
     cosine_ok = acc.action_cosine_similarity > cosine_threshold
+    verdict = _accuracy_verdict(mse_ok, cosine_ok)
 
-    if mse_ok and cosine_ok:
+    if verdict == "pass":
         recommendation = (
             "QUANTIZATION ACCEPTABLE: Action deviation is within thresholds. "
             "INT8 deployment is safe."
         )
-        verdict = "pass"
-    elif mse_ok and not cosine_ok:
+    elif verdict == "caution" and mse_ok:
         recommendation = (
             "QUANTIZATION CAUTION: MSE is acceptable but cosine similarity is low. "
             "Action direction may deviate. Consider FP16 or more calibration data."
         )
-        verdict = "caution"
-    elif not mse_ok and cosine_ok:
+    elif verdict == "caution":
         recommendation = (
             "QUANTIZATION CAUTION: Cosine similarity is good but MSE exceeds threshold. "
             "Action magnitude may deviate. Consider static quantization "
             "with environment calibration data."
         )
-        verdict = "caution"
     else:
         recommendation = (
             "QUANTIZATION NOT RECOMMENDED: Significant action deviation detected. "
             "Use FP16 or FP32 instead. Try collecting more calibration data "
             "from the actual environment."
         )
-        verdict = "fail"
 
     return {
         "verdict": verdict,
