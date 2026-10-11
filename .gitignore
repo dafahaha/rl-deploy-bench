@@ -153,3 +153,8 @@ test_output/
 *.npz
 !examples/**/*.onnx
 !tests/**/*.onnx
+
+# Local scratch / backup artifacts (never commit):
+# print-style draft script, not a pytest module; and a broken-.git backup dir.
+test_tensorrt_fallback.py
+.git.broken-1007/
