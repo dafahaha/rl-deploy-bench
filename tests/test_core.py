@@ -1143,39 +1143,92 @@ class TestCalibrationData:
         with pytest.raises(RuntimeError, match="rejected every observation"):
             generator.generate()
 
-    def test_calibration_intermittent_dry_episode_does_not_raise_with_num_episodes_none(self):
+    def test_calibration_intermittent_dry_episode_does_not_raise_with_num_episodes_none(
+        self, monkeypatch
+    ):
         """F1 regression: a filter that rejects whole early episodes but
         accepts later ones must not raise under num_episodes=None. The
         generator should keep going until it collects num_samples.
 
         The guard only fires after 3 *consecutive* dry episodes, so a couple
         of dry early episodes followed by productive ones must not abort.
+
+        Hermetic: the original version drove a real CartPole-v1 env and relied
+        on its stochastic pole-termination to "accidentally" produce at most one
+        dry early episode. On Linux CI (different numpy/gymnasium builds per
+        Python 3.10/3.11/3.12) the episode length distribution shifted and the
+        filter could see several consecutive dry episodes, flakily tripping the
+        guard. We now script a deterministic fake env whose observations are a
+        monotonic id, and reject exactly the first four observations so that the
+        first two episodes are *entirely* dry and every later observation is
+        accepted. This exercises the exact "intermittent dry" path (2 < 3
+        consecutive dry guard threshold) with zero dependence on env dynamics.
         """
+        import gymnasium as gym
+
         from rl_deploy_bench.benchmark.calibration import (
             CalibrationConfig,
             EnvironmentCalibrationGenerator,
         )
 
-        calls = {"n": 0}
+        class _ScriptedEnv:
+            """Deterministic Gym-like env.
+
+            episode_lengths[i] is the number of post-reset steps in episode i;
+            after the listed episodes run out, episodes are long enough to
+            easily reach num_samples. Observations are a monotonically
+            increasing scalar id so the filter can reject a fixed prefix.
+            """
+
+            def __init__(self, episode_lengths):
+                self._lengths = list(episode_lengths)
+                self._ep_idx = -1
+                self._step_in_ep = 0
+                self._next_id = 0
+                self.closed = False
+
+            def reset(self, seed=None, options=None):
+                self._ep_idx += 1
+                self._step_in_ep = 0
+                self._next_id += 1
+                return np.array([self._next_id], dtype=np.float32), {}
+
+            def step(self, action):
+                self._step_in_ep += 1
+                self._next_id += 1
+                obs = np.array([self._next_id], dtype=np.float32)
+                length = self._lengths[self._ep_idx] if self._ep_idx < len(self._lengths) else 200
+                terminated = self._step_in_ep >= length
+                return obs, 0.0, terminated, False, {}
+
+            def close(self):
+                self.closed = True
+
+        # Exactly two short (1-step) episodes, then long productive episodes.
+        fake_env = _ScriptedEnv(episode_lengths=[1, 1])
+        monkeypatch.setattr(gym, "make", lambda *args, **kwargs: fake_env)
 
         def filter_fn(obs):
-            calls["n"] += 1
-            # Reject the first couple of observations (at most the first dry
-            # episode) and then accept everything. The threshold is small enough
-            # that even if CartPole episodes terminate immediately, we never
-            # reach 3 consecutive dry episodes before the filter starts accepting.
-            return calls["n"] > 2
+            # Reject ids 1..4: the initial + single step obs of each of the
+            # first two (fully dry) episodes. Accept id >= 5 forever after.
+            return float(obs[0]) > 4.0
 
         config = CalibrationConfig(
             num_samples=10,
-            collection_strategy="random",
+            collection_strategy="policy",
             seed=42,
-            max_steps_per_episode=10,
+            max_steps_per_episode=200,
             observation_filter=filter_fn,
         )
-        generator = EnvironmentCalibrationGenerator("CartPole-v1", config=config)
+        generator = EnvironmentCalibrationGenerator(
+            "ScriptedFake-v0", policy=lambda obs: 0, config=config
+        )
         dataset = generator.generate()
+        # First two episodes dry (0 accepted), third productive episode collects
+        # all 10 samples: exactly 3 episodes run and no guard raise fires.
         assert len(dataset) == 10
+        assert dataset.collection_stats["episodes_completed"] == 3
+        assert fake_env.closed
 
     def test_calibration_with_num_episodes_and_rejecting_filter_does_not_raise(self):
         """F1 regression: when num_episodes is set, the guard must never raise.
