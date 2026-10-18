@@ -202,6 +202,14 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for gu
 4. Run tests: `pytest tests/ -v`
 5. Submit a Pull Request
 
+## Related research notes
+
+A static, auditable write-up of the deployment pitfalls fixed in this toolkit
+(calibration dry episodes, action-bounds affine mismatch, static-quantization
+rank errors, swallowed FP16 exceptions, monitor leaks, report injection) lives
+in the companion notes site:
+[`dafahaha/embodied-offpolicy-study` · `docs/`](https://github.com/dafahaha/embodied-offpolicy-study/tree/main/docs).
+
 ## 📝 Citation
 
 If you use RL-Deploy-Bench in your research, please cite:
