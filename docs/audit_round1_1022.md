@@ -112,6 +112,17 @@ returned to pristine before the next mutation.
 - No Windows-only failure appeared; nothing needed pristine-baseline
   reproduction. CI remains the Linux source of truth.
 
+## CI verification (public Actions page, 2026-10-22)
+
+- Pushed HEAD `623337d` → CI **#40 completed successfully** (2m0s, Ubuntu
+  matrix py3.10/3.11/3.12). The fix commit `e5b7c26` is an ancestor of this run,
+  so the green run executes the new escape test and full suite.
+- Historical note: the pre-existing base commit `c3f189d` (README-only, +8
+  lines, no code) shows CI **#39 failed** on Oct 18; anonymous run logs are not
+  readable, local pristine passed 58/1, and the descendant HEAD #40 is green, so
+  this audit treats #39 as a transient/environmental baseline event unrelated to
+  the change here.
+
 ## Attack surface for the next adversarial reviewer
 
 1. **TorchScript seam** (P3-1/P3-2): standalone `warmup` default shape and the
