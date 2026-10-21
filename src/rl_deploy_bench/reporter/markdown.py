@@ -72,7 +72,9 @@ def generate_markdown_report(
         lines.append(f"| CPU Cores | {platform_info.cpu_count} |")
         lines.append(f"| Total Memory | {platform_info.total_memory_gb} GB |")
         if platform_info.has_nvidia_gpu:
-            lines.append(f"| GPU | {platform_info.gpu_name} (x{platform_info.gpu_count}) |")
+            lines.append(
+                f"| GPU | {_escape_pipe(platform_info.gpu_name)} " f"(x{platform_info.gpu_count}) |"
+            )
         if platform_info.is_jetson:
             lines.append("| Platform | NVIDIA Jetson |")
         lines.append("")

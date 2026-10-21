@@ -1064,6 +1064,56 @@ class TestReportGeneration:
         assert keys.index("p90") == keys.index("p50") + 1
         assert keys.index("p95") == keys.index("p90") + 1
 
+    def test_markdown_report_escapes_gpu_name_pipe_and_newline(self, tmp_dir):
+        """Round-1 audit: the platform GPU row must go through _escape_pipe like
+        model names/titles. A GPU name carrying '|' or a newline otherwise
+        splits the Markdown platform table / injects a row, mirroring the E2
+        injection defense the HTML reporter already applies to gpu_name."""
+        import os
+        from types import SimpleNamespace
+
+        from rl_deploy_bench.reporter.markdown import generate_markdown_report
+        from rl_deploy_bench.utils.platform import PlatformInfo
+
+        result = SimpleNamespace(
+            latency=SimpleNamespace(
+                mean_ms=1.0,
+                p50_ms=1.0,
+                p90_ms=1.0,
+                p95_ms=1.0,
+                p99_ms=1.0,
+                min_ms=1.0,
+                max_ms=1.0,
+                throughput_fps=1.0,
+                num_runs=20,
+            ),
+            avg_gpu_utilization=None,
+            avg_gpu_power_w=None,
+            avg_gpu_memory_mb=None,
+            avg_cpu_utilization=None,
+            model_info={},
+            batch_size=1,
+        )
+        platform_info = PlatformInfo(
+            os="Linux",
+            arch="x86_64",
+            python_version="3.12",
+            has_nvidia_gpu=True,
+            is_jetson=False,
+            gpu_name="RTX | 4090\nINJECTED",
+            gpu_count=1,
+            cpu_count=8,
+            total_memory_gb=16.0,
+        )
+        report_path = os.path.join(tmp_dir, "report.md")
+        output = generate_markdown_report(report_path, [result], ["M"], platform_info=platform_info)
+        with open(output, "r", encoding="utf-8") as f:
+            content = f.read()
+        # Pipe escaped, newline folded to a space; no raw injected row.
+        assert r"RTX \| 4090 INJECTED" in content
+        assert "RTX | 4090\nINJECTED" not in content
+        assert not any(line.startswith("INJECTED") for line in content.splitlines())
+
 
 # ============================================================
 # Calibration data tests
