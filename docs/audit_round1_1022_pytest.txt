@@ -1,0 +1,80 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.13.16, pytest-9.1.1, pluggy-1.7.0 -- D:\github项目\rl-deploy-bench\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\github项目\rl-deploy-bench
+configfile: pyproject.toml
+plugins: platformdirs-4.13.5
+collecting ... collected 60 items
+
+tests/test_core.py::TestPlatformDetection::test_detect_platform_returns_info PASSED [  1%]
+tests/test_core.py::TestPlatformDetection::test_get_monitor_backend_returns_string PASSED [  3%]
+tests/test_core.py::TestPlatformDetection::test_detect_nvidia_gpu_shuts_down_nvml_when_middle_step_raises PASSED [  5%]
+tests/test_core.py::TestNvidiaGPUMonitor::test_start_shuts_down_nvml_when_get_handle_raises PASSED [  6%]
+tests/test_core.py::TestModelExport::test_export_to_onnx_creates_file PASSED [  8%]
+tests/test_core.py::TestModelExport::test_export_verification_passes PASSED [ 10%]
+tests/test_core.py::TestModelExport::test_export_with_action_bounds PASSED [ 11%]
+tests/test_core.py::TestModelExport::test_export_with_action_bounds_dynamic_batch PASSED [ 13%]
+tests/test_core.py::TestModelExport::test_action_bounds_unscale_matches_hand_computed_affine PASSED [ 15%]
+tests/test_core.py::TestModelExport::test_action_bounds_unscale_without_normalize_is_identity PASSED [ 16%]
+tests/test_core.py::TestModelExport::test_action_bounds_clips_pre_unscale_actions_outside_range PASSED [ 18%]
+tests/test_core.py::TestOnnxRuntimeInference::test_inference_returns_correct_shape PASSED [ 20%]
+tests/test_core.py::TestOnnxRuntimeInference::test_inference_matches_pytorch PASSED [ 21%]
+tests/test_core.py::TestOnnxRuntimeInference::test_warmup_does_not_crash PASSED [ 23%]
+tests/test_core.py::TestLatencyBenchmark::test_benchmark_returns_stats PASSED [ 25%]
+tests/test_core.py::TestLatencyBenchmark::test_benchmark_rejects_nonpositive_num_runs PASSED [ 26%]
+tests/test_core.py::TestLatencyBenchmark::test_benchmark_monitor_snapshot_failure_still_stops_monitor PASSED [ 28%]
+tests/test_core.py::TestLatencyBenchmark::test_benchmark_stops_monitor_when_infer_raises PASSED [ 30%]
+tests/test_core.py::TestAccuracyComparison::test_compare_identical_actions PASSED [ 31%]
+tests/test_core.py::TestAccuracyComparison::test_compare_different_actions PASSED [ 33%]
+tests/test_core.py::TestAccuracyComparison::test_generate_test_observations PASSED [ 35%]
+tests/test_core.py::TestQuantization::test_dynamic_quantize_creates_file PASSED [ 36%]
+tests/test_core.py::TestQuantization::test_quantized_model_runs_inference PASSED [ 38%]
+tests/test_core.py::TestQuantization::test_evaluate_quantization PASSED  [ 40%]
+tests/test_core.py::TestQuantization::test_accuracy_verdict_maps_gates_to_verdict[True-True-pass] PASSED [ 41%]
+tests/test_core.py::TestQuantization::test_accuracy_verdict_maps_gates_to_verdict[True-False-caution] PASSED [ 43%]
+tests/test_core.py::TestQuantization::test_accuracy_verdict_maps_gates_to_verdict[False-True-caution] PASSED [ 45%]
+tests/test_core.py::TestQuantization::test_accuracy_verdict_maps_gates_to_verdict[False-False-fail] PASSED [ 46%]
+tests/test_core.py::TestQuantization::test_evaluate_quantization_recommendation_matches_verdict PASSED [ 48%]
+tests/test_core.py::TestQuantization::test_static_quantize_with_random_data PASSED [ 50%]
+tests/test_core.py::TestQuantization::test_static_quantize_respects_custom_input_name PASSED [ 51%]
+tests/test_core.py::TestQuantization::test_shape_inferred_temp_model_cleans_up_when_save_fails PASSED [ 53%]
+tests/test_core.py::TestQuantization::test_fp16_conversion_roundtrip PASSED [ 55%]
+tests/test_core.py::TestQuantization::test_fp16_manual_fallback_method2_runs PASSED [ 56%]
+tests/test_core.py::TestQuantization::test_fp16_manual_fallback_warns_about_op_blocklist PASSED [ 58%]
+tests/test_core.py::TestQuantization::test_evaluate_fp16_impact_respects_cosine_threshold PASSED [ 60%]
+tests/test_core.py::TestReportGeneration::test_markdown_report_generated PASSED [ 61%]
+tests/test_core.py::TestReportGeneration::test_html_report_generated PASSED [ 63%]
+tests/test_core.py::TestReportGeneration::test_html_report_escapes_model_name_and_title PASSED [ 65%]
+tests/test_core.py::TestReportGeneration::test_html_summary_table_has_p90 PASSED [ 66%]
+tests/test_core.py::TestReportGeneration::test_markdown_report_escapes_pipe_in_name PASSED [ 68%]
+tests/test_core.py::TestReportGeneration::test_markdown_report_folds_newlines_in_model_name PASSED [ 70%]
+tests/test_core.py::TestReportGeneration::test_markdown_report_title_folds_newlines PASSED [ 71%]
+tests/test_core.py::TestReportGeneration::test_latency_distribution_data_includes_p90 PASSED [ 73%]
+tests/test_core.py::TestReportGeneration::test_markdown_report_escapes_gpu_name_pipe_and_newline PASSED [ 75%]
+tests/test_core.py::TestCalibrationData::test_generate_calibration_from_env PASSED [ 76%]
+tests/test_core.py::TestCalibrationData::test_calibration_dataset_save_load PASSED [ 78%]
+tests/test_core.py::TestCalibrationData::test_calibration_statistics PASSED [ 80%]
+tests/test_core.py::TestCalibrationData::test_calibration_rejecting_filter_raises_instead_of_looping PASSED [ 81%]
+tests/test_core.py::TestCalibrationData::test_calibration_intermittent_dry_episode_does_not_raise_with_num_episodes_none PASSED [ 83%]
+tests/test_core.py::TestCalibrationData::test_calibration_guard_raises_exactly_on_third_consecutive_dry_episode PASSED [ 85%]
+tests/test_core.py::TestCalibrationData::test_calibration_productive_episode_resets_consecutive_dry_counter PASSED [ 86%]
+tests/test_core.py::TestCalibrationData::test_calibration_with_num_episodes_and_rejecting_filter_does_not_raise PASSED [ 88%]
+tests/test_core.py::TestCalibrationData::test_calibration_filter_exception_propagates PASSED [ 90%]
+tests/test_core.py::TestCalibrationData::test_calibration_load_rejects_object_arrays PASSED [ 91%]
+tests/test_core.py::TestCLICompare::test_compare_html_output_is_real_html PASSED [ 93%]
+tests/test_core.py::TestSB3Export::test_sb3_onnx_matches_predict SKIPPEDs3') [ 95%]
+tests/test_core.py::TestTensorRTFallback::test_is_tensorrt_available_returns_bool PASSED [ 96%]
+tests/test_core.py::TestTensorRTFallback::test_require_tensorrt_raises_if_unavailable PASSED [ 98%]
+tests/test_core.py::TestTorchScriptExport::test_torchscript_smoke_matches_pytorch_and_docks_into_benchmark PASSED [100%]
+
+============================== warnings summary ===============================
+tests/test_core.py: 26 warnings
+  D:\github项目\rl-deploy-bench\tests\..\src\rl_deploy_bench\exporter\onnx_export.py:124: DeprecationWarning: You are using the legacy TorchScript-based ONNX export. Starting in PyTorch 2.9, the new torch.export-based ONNX exporter has become the default. Learn more about the new export logic: https://docs.pytorch.org/docs/stable/onnx_export.html. For exporting control flow: https://pytorch.org/tutorials/beginner/onnx/export_control_flow_model_to_onnx_tutorial.html
+    torch.onnx.export(
+
+tests/test_core.py: 26 warnings
+  D:\github项目\rl-deploy-bench\.venv\Lib\site-packages\torch\onnx\_internal\torchscript_exporter\utils.py:218: DeprecationWarning: The feature will be removed. Please remove usage of this function
+    setup_onnx_logging(verbose) as log_ctx,
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================= 59 passed, 1 skipped, 52 warnings in 9.75s ==================
