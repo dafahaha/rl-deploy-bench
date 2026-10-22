@@ -42,6 +42,9 @@ jobs:
 
       - name: Run tests
         run: |
+          # Pipe through tee so the output is captured to a file; on failure we
+          # surface the failing test name(s) as error annotations (the raw log
+          # lines are not available without signing in).
           set -o pipefail
           pytest tests/ -v --tb=short 2>&1 | tee pytest.log || test_rc=${PIPESTATUS[0]}
           if [ "${test_rc:-0}" != "0" ]; then
