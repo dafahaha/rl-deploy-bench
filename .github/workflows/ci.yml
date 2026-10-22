@@ -8,7 +8,10 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned to 24.04: ubuntu-latest migrated to Ubuntu 26 and the Run tests
+    # step began failing intermittently (a near-threshold compare verdict)
+    # across the Python matrix. 24.04 is the stable, reproducible runner.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -48,7 +51,7 @@ jobs:
           isort --check-only src/ tests/ demo.py examples/
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
