@@ -386,8 +386,9 @@ def compare(
     orig_inf = OnnxRuntimeInference(original)
     quant_inf = OnnxRuntimeInference(quantized)
 
-    # Generate test observations
-    observations = generate_test_observations(shape, num_samples)
+    # Generate test observations. Seeded so the whole compare command is
+    # reproducible (the manual inference comparison and the printed table).
+    observations = generate_test_observations(shape, num_samples, seed=0)
 
     # Get actions from both models
     console.print("[cyan]Running inference comparison...[/cyan]")
@@ -409,11 +410,12 @@ def compare(
     # But the function computes diff = original - deployed, which is what we want
     acc_result = compare_actions(orig_actions, quant_actions, observations)
 
-    # Benchmark latency for both
+    # Benchmark latency for both. Seeded inputs; wall-clock still varies
+    # with system load but the synthetic observations are reproducible.
     console.print("[cyan]Benchmarking original model...[/cyan]")
-    orig_bench = benchmark_latency(orig_inf, shape, num_runs=200, num_warmup=30)
+    orig_bench = benchmark_latency(orig_inf, shape, num_runs=200, num_warmup=30, seed=0)
     console.print("[cyan]Benchmarking quantized model...[/cyan]")
-    quant_bench = benchmark_latency(quant_inf, shape, num_runs=200, num_warmup=30)
+    quant_bench = benchmark_latency(quant_inf, shape, num_runs=200, num_warmup=30, seed=0)
 
     def _pct_change(quant: float, orig: float) -> str:
         if orig <= 0:
