@@ -1,5 +1,5 @@
-"""Temporary CI diagnostic: reproduce the verdict test and emit the actual
-mse/cosine values AND per-sample actions as GitHub Actions annotations."""
+"""Temporary CI diagnostic: emit CPU info and the first DynamicQuantizeLinear
+outputs (quantized/scale/zp) to localize the machine-specific runtime error."""
 import os
 import sys
 import tempfile
@@ -13,46 +13,39 @@ import torch
 from test_core import SimplePolicy
 from rl_deploy_bench.exporter.onnx_export import export_to_onnx
 from rl_deploy_bench.quantizer.int8 import dynamic_quantize, evaluate_quantization
-from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
 
-import onnxruntime as ort
 import onnx
-print("::warning title=versions::"
-      f"ort={ort.__version__} onnx={onnx.__version__} "
-      f"np={np.__version__} torch={torch.__version__} "
-      f"ORT_THREADS={os.environ.get('RL_DEPLOY_BENCH_ORT_THREADS')}")
+import onnxruntime as ort
+
+# CPU model name
+try:
+    cpu = [l for l in open('/proc/cpuinfo').read().splitlines() if 'model name' in l][0]
+except Exception as exc:
+    cpu = f"cpuinfo unavailable: {exc}"
+print(f"::warning title=cpu::{cpu.strip()}")
 
 torch.manual_seed(0)
 policy = SimplePolicy()
 policy.eval()
 
-for ns in (20, 100):
-    d = tempfile.mkdtemp()
-    onnx_path = os.path.join(d, "test.onnx")
-    export_to_onnx(policy, (4,), onnx_path)
-    q = dynamic_quantize(onnx_path)
-    r = evaluate_quantization(onnx_path, q, (4,), num_samples=ns, seed=0)
-    line = (
-        f"ns={ns} mse={r['action_mse']:.6e} cos={r['cosine_similarity']:.8f} "
-        f"verdict={r['verdict']}"
-    )
-    print(f"::warning title=CI verdict values::{line}")
+d = tempfile.mkdtemp()
+onnx_path = os.path.join(d, "test.onnx")
+export_to_onnx(policy, (4,), onnx_path)
+q = dynamic_quantize(onnx_path)
 
-    # Hash the quantized model bytes and the input onnx bytes to determine
-    # whether the bad model is a different artifact or the same artifact
-    # executed differently by the runtime.
-    import hashlib
-    qhash = hashlib.sha256(open(q, 'rb').read()).hexdigest()[:16]
-    ohash = hashlib.sha256(open(onnx_path, 'rb').read()).hexdigest()[:16]
-    print(f"::warning title=ns{ns} hashes::onnx={ohash} q={qhash}")
+# Run the first DQL node in isolation on the first 3 observations.
+m = onnx.load(q)
+first = next(n for n in m.graph.node if n.op_type == 'DynamicQuantizeLinear')
+for out in first.output:
+    m.graph.output.append(onnx.helper.make_tensor_value_info(out, 1, None))
+m.graph.output[-3].type.tensor_type.elem_type = onnx.TensorProto.UINT8
+m.graph.output[-1].type.tensor_type.elem_type = onnx.TensorProto.UINT8
+sess = ort.InferenceSession(m.SerializeToString(), providers=['CPUExecutionProvider'])
 
-    # Re-run the first 5 observations directly and emit orig vs quant actions.
-    orig_inf = OnnxRuntimeInference(onnx_path)
-    quant_inf = OnnxRuntimeInference(q)
-    obs = np.random.RandomState(0).randn(5, 4).astype(np.float32)
-    detail = []
-    for i, o in enumerate(obs):
-        a = orig_inf.infer(o).actions[0]
-        b = quant_inf.infer(o).actions[0]
-        detail.append(f"{i}:{np.round(a,4).tolist()}/{np.round(b,4).tolist()}")
-    print(f"::warning title=ns{ns} first5::{' '.join(detail)}")
+for idx in range(3):
+    obs = np.random.RandomState(0).randn(3, 4).astype(np.float32)[idx:idx+1]
+    qy, sc, zp = sess.run(None, {'observation': obs})
+    print(f"::warning title=dql obs{idx}::q={qy[0].tolist()} scale={float(sc):.6f} zp={int(zp)}")
+
+r = evaluate_quantization(onnx_path, q, (4,), num_samples=20, seed=0)
+print(f"::warning title=verdict::mse={r['action_mse']:.6e} cos={r['cosine_similarity']:.6f} {r['verdict']}")
