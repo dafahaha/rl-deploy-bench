@@ -6,6 +6,7 @@ Run with: pytest tests/ -v
 from __future__ import annotations
 
 import os
+import re
 import sys
 import tempfile
 import warnings
@@ -1051,6 +1052,13 @@ class TestReportGeneration:
         # script reference, not the bare string).
         assert 'src="https://cdn.plot.ly' not in content
         assert "Plotly.newPlot" in content
+        # P3-2 / M22: the inline Plotly bundle must actually be present.
+        # include_plotlyjs=False still emits "Plotly.newPlot" and no CDN src,
+        # so the previous two assertions stayed green. The bundle's version
+        # header only exists when the library is inlined, and a bundled report
+        # is ~3.5-4.8 MB (a bundle-less one is ~7 KB).
+        assert "plotly.js v" in content, "inline Plotly bundle header missing"
+        assert len(content) > 500_000, "report too small to contain the Plotly bundle"
 
     def test_html_report_escapes_model_name_and_title(self, policy, obs_shape, tmp_dir):
         """S1 regression: user-controlled model names/titles must be HTML-escaped."""
@@ -1112,6 +1120,47 @@ class TestReportGeneration:
         # The escaped form must appear; the name cannot split the row into extra
         # columns.
         assert r"a\|b\|c" in content
+
+    def test_markdown_latency_table_row_escapes_pipe(self, policy, obs_shape, tmp_dir):
+        """P3-1 / M14: the escaped form must occur specifically in the LATENCY
+        TABLE data row, not only in the per-model `### heading` (which is
+        escaped independently). The previous `in content` assertion stayed
+        green when the table row lost its escape because the heading still
+        carried `a\\|b\\|c`."""
+        from rl_deploy_bench.benchmark.latency import benchmark_latency
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.reporter.markdown import generate_markdown_report
+        from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+        inference = OnnxRuntimeInference(onnx_path)
+        result = benchmark_latency(inference, obs_shape, num_warmup=5, num_runs=20)
+
+        report_path = os.path.join(tmp_dir, "report.md")
+        output = generate_markdown_report(report_path, [result], ["a|b|c"])
+        with open(output, "r", encoding="utf-8") as f:
+            lines = f.read().splitlines()
+
+        # The latency table data row is the one whose first cell is the model
+        # name and whose later cells are latency/FPS numbers (contains a dot).
+        data_rows = [
+            ln for ln in lines
+            if ln.startswith("|") and ln.count("|") >= 8 and re.search(r"\d+\.\d+", ln)
+        ]
+        assert data_rows, "latency table data row not found"
+        row = data_rows[0]
+        # Escaped form present in the data row itself ...
+        assert r"a\|b\|c" in row, f"latency row did not escape pipe: {row!r}"
+        # ... and the raw unescaped name must not start the row (which would
+        # add two extra columns).
+        assert not row.startswith("| a|b|c |"), f"raw pipe leaked into row: {row!r}"
+        # A correctly formed latency table row has 9 cells (Model + 8 metrics)
+        # = 10 structural pipes (leading, 8 separators, trailing). Strip the
+        # escaped pipes before counting so the name's own `\|` sequences don't
+        # inflate the total.
+        structural = row.replace(r"\|", "")
+        assert structural.count("|") == 10, f"row has wrong column count: {row!r}"
 
     def test_markdown_report_folds_newlines_in_model_name(self, policy, obs_shape, tmp_dir):
         """R5-吹毛-1: a model name containing a newline must not inject extra
@@ -1699,8 +1748,15 @@ class TestCLICompare:
         out = result.output
         assert "Verdict:" in out
         assert "Recommendation:" in out
-        # Near-identical FP32 vs dynamic-INT8 tiny MLP lands on pass.
-        assert "pass" in out.lower()
+        # P3-3 / M19a: the standalone "Verdict: PASS" line must carry the
+        # verdict from eval_result. The previous bare `"pass" in out.lower()`
+        # matched the recommendation text even when the verdict variable was
+        # hardcoded to fail. The colon anchors this to the standalone line
+        # (the table's Verdict cell has no colon).
+        assert re.search(r"Verdict:\s*PASS\b", out), (
+            f"expected standalone 'Verdict: PASS', got:\n{out}"
+        )
+        assert not re.search(r"Verdict:\s*FAIL\b", out)
 
     def test_cli_quantize_explicit_input_name_forwarded(
         self, policy, obs_shape, tmp_dir, monkeypatch
