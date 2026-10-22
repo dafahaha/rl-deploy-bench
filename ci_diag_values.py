@@ -41,8 +41,21 @@ for ns in (20, 100):
 
     # Emit the quantized graph node op types so we can see the structure.
     import onnx
+    from onnx import numpy_helper
     m = onnx.load(q)
     ops = [n.op_type for n in m.graph.node]
     from collections import Counter
     summ = dict(Counter(ops))
     print(f"::warning title=ns{ns} graph::{summ}")
+
+    # Emit the initializers: name, data type, shape, and for float scales the
+    # value range. This reveals whether the bad model has coarse/zero scales.
+    init_info = []
+    for init in m.graph.initializer:
+        arr = numpy_helper.to_array(init)
+        try:
+            rng = f"{float(arr.min()):.4g}..{float(arr.max()):.4g}"
+        except Exception:
+            rng = "?"
+        init_info.append(f"{init.name}:dt{init.data_type}:{list(arr.shape)}:{rng}")
+    print(f"::warning title=ns{ns} initializers::{' | '.join(init_info)}")
