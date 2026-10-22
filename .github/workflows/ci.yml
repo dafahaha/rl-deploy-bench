@@ -55,6 +55,11 @@ jobs:
             grep -E "^FAILED[[:space:]]" pytest.log | while IFS= read -r line; do
               echo "::error title=Pytest failure::${line}"
             done
+            # Surface the standalone verdict line and the MSE/cosine table cells
+            # from the captured compare output so the actual numbers are visible.
+            grep -E "Verdict:|Action MSE|Cosine Sim" pytest.log | sort -u | while IFS= read -r line; do
+              echo "::warning title=Observed verdict output::${line}"
+            done
             exit "${test_rc}"
           fi
 
