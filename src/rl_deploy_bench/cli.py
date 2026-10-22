@@ -108,6 +108,15 @@ def quantize(
         "--calibration-file",
         help="Path to calibration dataset .npz file (from 'calibrate' command)",
     ),
+    input_name: Optional[str] = typer.Option(
+        None,
+        "--input-name",
+        help="ONNX model input name used for static quantization calibration. "
+        "Defaults to the model's actual input name read from the ONNX graph; set "
+        "explicitly when the model was exported with a custom input name "
+        "(e.g. 'obs') so calibration feeds the correct input instead of the "
+        "hardcoded 'observation'.",
+    ),
 ):
     """Quantize an ONNX model to INT8."""
     from .quantizer.int8 import (
@@ -131,6 +140,15 @@ def quantize(
             )
             raise typer.Exit(1)
 
+        # Default to the model's real input name instead of hardcoding
+        # "observation"; a model exported with a custom input name would
+        # otherwise calibrate against a non-existent feed.
+        if input_name is None:
+            from .runtime.onnx_runtime import OnnxRuntimeInference
+
+            input_name = OnnxRuntimeInference(onnx_path).input_name
+        console.print(f"[cyan]Calibration input name:[/cyan] {input_name}")
+
         if calibration_file:
             from .benchmark.calibration import CalibrationDataset
 
@@ -143,7 +161,7 @@ def quantize(
                 "[cyan]Applying static INT8 quantization with environment calibration...[/cyan]"
             )
             quantized_path = static_quantize_with_dataset(
-                onnx_path, dataset, output, input_name="observation"
+                onnx_path, dataset, output, input_name=input_name
             )
         else:
             shape = tuple(int(x) for x in obs_shape.split(","))
@@ -156,7 +174,11 @@ def quantize(
                 "environment-based calibration data for better results[/yellow]"
             )
             quantized_path = static_quantize(
-                onnx_path, shape, output, calibration_samples=calibration_samples
+                onnx_path,
+                shape,
+                output,
+                calibration_samples=calibration_samples,
+                input_name=input_name,
             )
     else:
         console.print(f"[red]Error:[/red] Unknown mode '{mode}'. Use 'dynamic' or 'static'.")
@@ -352,7 +374,7 @@ def compare(
 
     from .benchmark.accuracy import compare_actions, generate_test_observations
     from .benchmark.latency import benchmark_latency
-    from .quantizer.int8 import compare_model_sizes
+    from .quantizer.int8 import compare_model_sizes, evaluate_quantization
     from .reporter.markdown import generate_markdown_report
     from .runtime.onnx_runtime import OnnxRuntimeInference
     from .utils.platform import detect_platform
@@ -408,11 +430,19 @@ def compare(
     # Size comparison
     size_info = compare_model_sizes(original, quantized)
 
+    # Automated pass/caution/fail verdict using the same gates as the Python
+    # API (evaluate_quantization), instead of printing raw MSE/cosine with no
+    # recommendation. The verdict only reflects action deviation on synthetic
+    # observations; see the boundary note in evaluate_quantization.
+    eval_result = evaluate_quantization(original, quantized, shape, num_samples=num_samples)
+    verdict = eval_result["verdict"]
+    verdict_style = {"pass": "green", "caution": "yellow", "fail": "red"}[verdict]
+
     # Print summary
     table = Table(title="Comparison Summary")
     table.add_column("Metric", style="cyan")
     table.add_column("Original (FP32)", style="green")
-    table.add_column("Quantized (INT8)", style="yellow")
+    table.add_column("Deployed", style="yellow")
     table.add_column("Change", style="magenta")
     table.add_row(
         "Mean Latency",
@@ -442,9 +472,13 @@ def compare(
         f"{size_info['quantized_size_mb']:.2f} MB",
         f"-{size_info['size_reduction_pct']:.1f}%",
     )
-    table.add_row("Action MSE", "-", f"{acc_result.action_mse:.6f}", "-")
-    table.add_row("Cosine Sim", "-", f"{acc_result.action_cosine_similarity:.6f}", "-")
+    table.add_row("Action MSE", "-", f"{eval_result['action_mse']:.6f}", "-")
+    table.add_row("Cosine Sim", "-", f"{eval_result['cosine_similarity']:.6f}", "-")
+    table.add_row("Verdict", "-", f"[{verdict_style}]{verdict}[/{verdict_style}]", "-")
     console.print(table)
+
+    console.print(f"\n[bold]Verdict:[/bold] [{verdict_style}]{verdict.upper()}[/{verdict_style}]")
+    console.print(f"[cyan]Recommendation:[/cyan] {eval_result['recommendation']}")
 
     # Generate report
     if output:

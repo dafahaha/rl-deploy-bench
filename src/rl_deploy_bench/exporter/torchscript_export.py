@@ -72,19 +72,63 @@ def export_to_torchscript(
             raise ValueError(f"Unknown export method: {config.method}. Use 'trace' or 'script'.")
 
         # Save before optimization (optimized models may not be serializable)
-        scripted.save(output_path)
+        _safe_save_torchscript(scripted, output_path)
 
-        # Load and optimize for inference if requested
+        # Load and optimize for inference if requested. The load also goes
+        # through the non-ASCII-safe helper, otherwise the optimize step itself
+        # crashes on the same non-ASCII path we just wrote around.
         if config.optimize:
             try:
-                loaded = torch.jit.load(output_path)
+                loaded = _safe_load_torchscript(output_path)
                 loaded = torch.jit.freeze(loaded)
                 optimized = torch.jit.optimize_for_inference(loaded)
-                optimized.save(output_path)
-            except Exception:
-                # If optimization fails, keep the unoptimized version
-                pass
+                _safe_save_torchscript(optimized, output_path)
+            except Exception as e:
+                # If optimization fails, keep the unoptimized version. Warn
+                # instead of swallowing the error silently so the user knows
+                # the optimized path was skipped.
+                import warnings
+
+                warnings.warn(
+                    "TorchScript inference optimization failed; keeping the "
+                    f"unoptimized exported model. Reason: {e}"
+                )
     return os.path.abspath(output_path)
+
+
+def _has_non_ascii(text: str) -> bool:
+    return any(ord(c) > 127 for c in text)
+
+
+def _safe_save_torchscript(scripted, output_path: str) -> None:
+    """Save a scripted module with support for non-ASCII paths.
+
+    ``torch.jit.save`` shares the non-ASCII path defect of ``torch.jit.load`` on
+    Windows: even after ``makedirs`` succeeds it raises a misleading
+    "Parent directory ... does not exist" RuntimeError. When the target path
+    contains non-ASCII characters, save to a uniquely named ASCII temp file
+    first and ``shutil.move`` it onto the target (symmetric with
+    :func:`_safe_load_torchscript`); otherwise save directly.
+    """
+    import shutil
+    import tempfile
+
+    abs_path = os.path.abspath(output_path)
+    if not _has_non_ascii(abs_path):
+        scripted.save(abs_path)
+        return
+
+    fd, tmp_path = tempfile.mkstemp(prefix="rl_deploy_bench_ts_save_", suffix=".pt")
+    os.close(fd)
+    try:
+        scripted.save(tmp_path)
+        shutil.move(tmp_path, abs_path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _safe_load_torchscript(model_path: str):
@@ -94,11 +138,16 @@ def _safe_load_torchscript(model_path: str):
     This helper copies the file to a temp directory with an ASCII name if needed.
     The temp file is uniquely named (so concurrent loads don't clobber each
     other) and removed as soon as torch.jit.load has consumed it.
+
+    The fallback triggers for *any* RuntimeError on a non-ASCII path (not only
+    the literal "No such file or directory" message): PyTorch localizes or
+    rewords the underlying filesystem error across versions, so matching a
+    single message string lets other non-ASCII failures bypass the fallback.
     """
     try:
         return torch.jit.load(model_path)
-    except RuntimeError as e:
-        if "No such file or directory" in str(e) and any(ord(c) > 127 for c in model_path):
+    except RuntimeError:
+        if _has_non_ascii(model_path):
             # Path contains non-ASCII characters, copy to a unique temp file.
             import shutil
             import tempfile

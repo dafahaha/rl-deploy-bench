@@ -82,8 +82,10 @@ an affine transform and verification spuriously fails.
 TorchScript export/inference lives in the `rl_deploy_bench.exporter` subpackage
 (it is not re-exported from the top-level `rl_deploy_bench` package — import it
 from `rl_deploy_bench.exporter`). It uses the legacy `torch.jit` trace/script
-path, which works on CPU/CUDA but emits a `FutureWarning` on Python 3.14+; for
-new projects prefer ONNX. `TorchScriptInference` implements the same duck
+path, which works on CPU/CUDA; recent PyTorch versions (2.9+, observed on
+PyTorch 2.14 already on CPython 3.13) emit a `FutureWarning`, driven by the
+PyTorch version rather than the Python version. For new projects prefer ONNX.
+`TorchScriptInference` implements the same duck
 interface as `OnnxRuntimeInference`, so it can be passed straight to
 `benchmark_latency` / `evaluate_*` unchanged.
 
@@ -297,6 +299,12 @@ Evaluate quantization impact with automated recommendation.
 `cosine_threshold` defaults to `0.99`, on the same pass/fail semantics as
 `evaluate_fp16_impact` below (the two evaluators share identical MSE / cosine
 gates).
+
+> **Verdict scope**: the verdict is computed on synthetic random-normal test
+> observations. It only means action deviation stays within the MSE / cosine
+> thresholds on those inputs; it does **not** imply closed-loop task success or
+> preserved policy performance. Re-validate with real-environment rollouts
+> before deploying.
 
 ```python
 from rl_deploy_bench.quantizer import evaluate_quantization

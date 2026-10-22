@@ -195,6 +195,12 @@ def evaluate_fp16_impact(
 ) -> dict:
     """Evaluate the impact of FP16 conversion on action accuracy.
 
+    Boundary: the verdict is computed on synthetic (random-normal) test
+    observations. It only means action deviation stays within the MSE / cosine
+    thresholds on those inputs; it does NOT imply closed-loop task success or
+    preserved policy performance. Always re-validate with real-environment
+    rollouts before deploying.
+
     Args:
         original_model_path: Path to original FP32 ONNX model.
         fp16_model_path: Path to FP16 ONNX model.
@@ -234,8 +240,12 @@ def evaluate_fp16_impact(
 
     if verdict == "pass":
         recommendation = (
-            "FP16 ACCEPTABLE: Action deviation is within thresholds. "
-            "FP16 deployment is safe and recommended for GPU acceleration."
+            "FP16 ACCEPTABLE: Action deviation is within thresholds on synthetic "
+            "test observations. This verdict only means the action MSE / cosine "
+            "gates pass on random synthetic inputs; it does NOT represent "
+            "closed-loop task success or preserved policy performance, and must "
+            "be re-validated with real-environment rollouts before deployment. "
+            "FP16 is a candidate for GPU acceleration after that rollout check."
         )
     elif verdict == "caution" and mse_ok:
         recommendation = (

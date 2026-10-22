@@ -595,6 +595,34 @@ class TestAccuracyComparison:
         assert obs.shape == (50, 4)
         assert obs.dtype == np.float32
 
+    def test_compare_all_zero_actions_cosine_is_one_and_rel_error_zero(self):
+        """P3-11: two identical all-zero action vectors are aligned (cosine
+        1.0); with zero variance and zero MSE the relative error is 0.0 rather
+        than an empty-average 0.0 cosine or a 0/0 inf."""
+        from rl_deploy_bench.benchmark.accuracy import compare_actions
+
+        zeros = np.zeros((50, 2), dtype=np.float32)
+        result = compare_actions(zeros, zeros)
+        assert result.action_mse == pytest.approx(0.0, abs=1e-7)
+        assert result.action_cosine_similarity == pytest.approx(1.0, abs=1e-6)
+        assert result.action_relative_error == 0.0
+
+    def test_compare_constant_actions_zero_variance_relative_error(self):
+        """P3-11: constant (zero-variance) original actions that match exactly
+        give relative_error 0.0; a deviation on that constant baseline stays
+        inf (undefined denominator, non-zero error)."""
+        from rl_deploy_bench.benchmark.accuracy import compare_actions
+
+        constant = np.full((50, 2), 0.5, dtype=np.float32)
+        exact = compare_actions(constant, constant)
+        assert exact.action_mse == pytest.approx(0.0, abs=1e-7)
+        assert exact.action_relative_error == 0.0
+
+        shifted = constant + 0.1
+        deviated = compare_actions(constant, shifted)
+        assert deviated.action_mse > 0
+        assert deviated.action_relative_error == float("inf")
+
 
 # ============================================================
 # Quantization tests
@@ -613,6 +641,32 @@ class TestQuantization:
         quantized_path = dynamic_quantize(onnx_path, quantized_path)
         assert os.path.exists(quantized_path)
         assert os.path.getsize(quantized_path) > 0
+
+    def test_dynamic_quantize_cleans_up_success_path_temp_file(
+        self, policy, obs_shape, tmp_dir, monkeypatch
+    ):
+        """P3-6 / M5b: on the success path the shape-inference temp ONNX file
+        must be unlinked in the finally block; removing that cleanup leaves the
+        file behind and fails this test."""
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer import int8 as int8_mod
+        from rl_deploy_bench.quantizer.int8 import dynamic_quantize
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+
+        recorded = {}
+        original_helper = int8_mod._shape_inferred_temp_model
+
+        def spy(source_path):
+            tmp = original_helper(source_path)
+            recorded["tmp"] = tmp
+            return tmp
+
+        monkeypatch.setattr(int8_mod, "_shape_inferred_temp_model", spy)
+        dynamic_quantize(onnx_path, os.path.join(tmp_dir, "test_int8.onnx"))
+        assert "tmp" in recorded
+        assert not os.path.exists(recorded["tmp"])
 
     def test_quantized_model_runs_inference(self, policy, obs_shape, tmp_dir):
         from rl_deploy_bench.exporter.onnx_export import export_to_onnx
@@ -840,6 +894,53 @@ class TestQuantization:
         msgs = [str(w.message) for w in caught]
         assert any("op_blocklist" in m and "ignored" in m for m in msgs), msgs
 
+    def test_fp16_manual_fallback_invokes_onnx_checker(
+        self, policy, obs_shape, tmp_dir, monkeypatch
+    ):
+        """P3-7 / M4a: the manual Method-2 fallback must call onnx.checker on
+        the rewritten graph; ort loading alone is only a backstop. Deleting the
+        check_model call leaves the spy silent and this test fails."""
+        import onnx
+
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer.fp16 import convert_onnx_to_fp16
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+        monkeypatch.setitem(sys.modules, "onnxruntime.transformers.float16", None)
+
+        calls = []
+        real_check = onnx.checker.check_model
+
+        def spy(model):
+            calls.append(model)
+            return real_check(model)
+
+        monkeypatch.setattr(onnx.checker, "check_model", spy)
+        convert_onnx_to_fp16(onnx_path, os.path.join(tmp_dir, "fp16.onnx"))
+        assert len(calls) == 1
+
+    def test_fp16_manual_fallback_propagates_checker_error(
+        self, policy, obs_shape, tmp_dir, monkeypatch
+    ):
+        """P3-7: a graph that fails onnx.checker must surface the checker error
+        instead of being saved unvalidated."""
+        import onnx
+
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer.fp16 import convert_onnx_to_fp16
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+        monkeypatch.setitem(sys.modules, "onnxruntime.transformers.float16", None)
+
+        def boom(model):
+            raise Exception("simulated invalid graph")
+
+        monkeypatch.setattr(onnx.checker, "check_model", boom)
+        with pytest.raises(Exception, match="simulated invalid graph"):
+            convert_onnx_to_fp16(onnx_path, os.path.join(tmp_dir, "fp16.onnx"))
+
     def test_evaluate_fp16_impact_respects_cosine_threshold(self, policy, obs_shape, tmp_dir):
         """R4-建议-3: evaluate_fp16_impact must expose cosine_threshold (matching
         evaluate_quantization) and actually consult it when gating the verdict,
@@ -926,6 +1027,30 @@ class TestReportGeneration:
             content = f.read()
         assert "<html" in content
         assert "plotly" in content.lower()
+
+    def test_html_report_is_self_contained_without_cdn(self, policy, obs_shape, tmp_dir):
+        """P3-8: the report claims to be self-contained, so Plotly must be
+        inlined (include_plotlyjs=True) rather than loaded from the CDN; a CDN
+        URL leaves blank charts when opened offline."""
+        from rl_deploy_bench.benchmark.latency import benchmark_latency
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.reporter.html import generate_html_report
+        from rl_deploy_bench.runtime.onnx_runtime import OnnxRuntimeInference
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+        inference = OnnxRuntimeInference(onnx_path)
+        result = benchmark_latency(inference, obs_shape, num_warmup=5, num_runs=20)
+
+        report_path = os.path.join(tmp_dir, "report.html")
+        output = generate_html_report(report_path, [result], ["M"], platform_info=None)
+        with open(output, "r", encoding="utf-8") as f:
+            content = f.read()
+        # No external <script src> to the Plotly CDN (the inline bundle itself
+        # contains "cdn.plot.ly" as a default config constant, so check the
+        # script reference, not the bare string).
+        assert 'src="https://cdn.plot.ly' not in content
+        assert "Plotly.newPlot" in content
 
     def test_html_report_escapes_model_name_and_title(self, policy, obs_shape, tmp_dir):
         """S1 regression: user-controlled model names/titles must be HTML-escaped."""
@@ -1431,6 +1556,28 @@ class TestCalibrationData:
         assert len(dataset) <= 50
         assert dataset.collection_stats["episodes_completed"] == 3
 
+    def test_calibration_num_episodes_zero_and_empty_dataset_warns(self, recwarn):
+        """P3-19: num_episodes=0 and a 0-observation result must warn instead of
+        silently delivering a degenerate/empty dataset for static quantization."""
+        from rl_deploy_bench.benchmark.calibration import (
+            CalibrationConfig,
+            EnvironmentCalibrationGenerator,
+        )
+
+        config = CalibrationConfig(
+            num_samples=10,
+            collection_strategy="random",
+            seed=42,
+            max_steps_per_episode=5,
+            num_episodes=0,
+            observation_filter=lambda obs: False,  # reject everything
+        )
+        dataset = EnvironmentCalibrationGenerator("CartPole-v1", config=config).generate()
+        assert len(dataset) == 0
+        msgs = [str(w.message) for w in recwarn.list]
+        assert any("num_episodes=0" in m for m in msgs), msgs
+        assert any("0 observations" in m for m in msgs), msgs
+
     def test_calibration_filter_exception_propagates(self):
         """F3 regression: a user-supplied observation_filter that raises must
         have the exception propagate (fail-closed), not be swallowed and the
@@ -1522,6 +1669,135 @@ class TestCLICompare:
         assert content.lstrip().lower().startswith("<!doctype html") or "<html" in content
         # A real HTML report contains plotly; a markdown report would not.
         assert "plotly" in content.lower()
+
+    def test_compare_prints_verdict_and_recommendation(self, policy, obs_shape, tmp_dir):
+        """P1-2: `compare` must print the pass/caution/fail verdict and the
+        recommendation instead of raw MSE/cosine with no decision."""
+        from typer.testing import CliRunner
+
+        from rl_deploy_bench.cli import app
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer.int8 import dynamic_quantize
+
+        fp32 = os.path.join(tmp_dir, "fp32.onnx")
+        export_to_onnx(policy, obs_shape, fp32)
+        quant = dynamic_quantize(fp32, os.path.join(tmp_dir, "quant.onnx"))
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "compare",
+                fp32,
+                quant,
+                "--obs-shape",
+                ",".join(str(s) for s in obs_shape),
+                "--num-samples",
+                "20",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        out = result.output
+        assert "Verdict:" in out
+        assert "Recommendation:" in out
+        # Near-identical FP32 vs dynamic-INT8 tiny MLP lands on pass.
+        assert "pass" in out.lower()
+
+    def test_cli_quantize_explicit_input_name_forwarded(
+        self, policy, obs_shape, tmp_dir, monkeypatch
+    ):
+        """P2-3: --input-name must be passed through to static_quantize instead
+        of being ignored in favor of the hardcoded 'observation'."""
+        from typer.testing import CliRunner
+
+        from rl_deploy_bench.cli import app
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer import int8 as int8_mod
+
+        onnx_path = os.path.join(tmp_dir, "m.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+
+        captured = {}
+
+        def fake_static(
+            model_path,
+            shape,
+            output_path=None,
+            calibration_samples=100,
+            input_name="observation",
+            **kw,
+        ):
+            captured["input_name"] = input_name
+            out = output_path or os.path.join(tmp_dir, "fake_static.onnx")
+            with open(out, "wb") as f:
+                f.write(b"fake")
+            return os.path.abspath(out)
+
+        monkeypatch.setattr(int8_mod, "static_quantize", fake_static)
+        result = CliRunner().invoke(
+            app,
+            [
+                "quantize",
+                onnx_path,
+                "--mode",
+                "static",
+                "--obs-shape",
+                ",".join(str(s) for s in obs_shape),
+                "--input-name",
+                "obs",
+                "--calibration-samples",
+                "4",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert captured["input_name"] == "obs"
+
+    def test_cli_quantize_default_input_name_reads_from_model(
+        self, policy, obs_shape, tmp_dir, monkeypatch
+    ):
+        """P2-3: without --input-name the CLI reads the model's actual input
+        name; a custom 'obs' export must calibrate as 'obs', not the hardcoded
+        'observation'."""
+        from typer.testing import CliRunner
+
+        from rl_deploy_bench.cli import app
+        from rl_deploy_bench.exporter.onnx_export import ExportConfig, export_to_onnx
+        from rl_deploy_bench.quantizer import int8 as int8_mod
+
+        onnx_path = os.path.join(tmp_dir, "m_obs.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path, config=ExportConfig(input_names=("obs",)))
+
+        captured = {}
+
+        def fake_static(
+            model_path,
+            shape,
+            output_path=None,
+            calibration_samples=100,
+            input_name="observation",
+            **kw,
+        ):
+            captured["input_name"] = input_name
+            out = output_path or os.path.join(tmp_dir, "fake_static.onnx")
+            with open(out, "wb") as f:
+                f.write(b"fake")
+            return os.path.abspath(out)
+
+        monkeypatch.setattr(int8_mod, "static_quantize", fake_static)
+        result = CliRunner().invoke(
+            app,
+            [
+                "quantize",
+                onnx_path,
+                "--mode",
+                "static",
+                "--obs-shape",
+                ",".join(str(s) for s in obs_shape),
+                "--calibration-samples",
+                "4",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert captured["input_name"] == "obs"
 
 
 # ============================================================
@@ -1618,8 +1894,8 @@ class TestTorchScriptExport:
 
         ts_path = os.path.join(tmp_dir, "policy.pt")
         with warnings.catch_warnings():
-            # torch.jit.* warns on Python 3.14+ (legacy path); the functionality
-            # itself works on this build, so silence only that warning.
+            # Recent PyTorch emits a FutureWarning for the legacy jit path
+            # (driven by the PyTorch version, not Python 3.14); silence it.
             warnings.simplefilter("ignore", FutureWarning)
             export_to_torchscript(
                 policy, obs_shape, ts_path, config=TorchScriptConfig(optimize=False)
@@ -1658,6 +1934,99 @@ class TestTorchScriptExport:
         assert bench.latency.num_runs == 5
         assert bench.model_info["backend"] == "torchscript"
         assert bench.model_info["input_shape"] == [5, 4]
+
+    def test_export_to_non_ascii_path_saves_verifies_and_loads(self, policy, obs_shape, tmp_dir):
+        """P1-1: torch.jit.save crashes on non-ASCII Windows paths (misleading
+        'directory does not exist' even after makedirs). The write side must
+        save via an ASCII temp file and move onto the target; the model must
+        then verify and load back, including the optimize path."""
+        from rl_deploy_bench.exporter.torchscript_export import (
+            TorchScriptConfig,
+            TorchScriptInference,
+            export_to_torchscript,
+            verify_torchscript_export,
+        )
+
+        non_ascii_dir = os.path.join(tmp_dir, "模型目录")
+        os.makedirs(non_ascii_dir, exist_ok=True)
+        ts_path = os.path.join(non_ascii_dir, "策略.pt")
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            out = export_to_torchscript(
+                policy, obs_shape, ts_path, config=TorchScriptConfig(optimize=True)
+            )
+        assert os.path.exists(out)
+
+        v = verify_torchscript_export(out, policy, obs_shape, num_samples=8, atol=1e-4)
+        assert bool(v["passed"]) is True, v
+
+        ti = TorchScriptInference(out)
+        x = np.random.randn(3, *obs_shape).astype(np.float32)
+        with torch.no_grad():
+            ref = policy(torch.from_numpy(x)).numpy()
+        assert np.allclose(ti.infer(x).actions, ref, atol=1e-4)
+
+    def test_safe_load_falls_back_on_any_runtime_error_non_ascii(
+        self, policy, obs_shape, tmp_dir, monkeypatch
+    ):
+        """P3-18: the non-ASCII load fallback must trigger on a RuntimeError
+        that does NOT contain 'No such file or directory' (localized/reworded
+        errors), not only the literal English message."""
+        from rl_deploy_bench.exporter.torchscript_export import (
+            TorchScriptConfig,
+            _safe_load_torchscript,
+            export_to_torchscript,
+        )
+
+        non_ascii_dir = os.path.join(tmp_dir, "目录")
+        os.makedirs(non_ascii_dir, exist_ok=True)
+        ts_path = os.path.join(non_ascii_dir, "m.pt")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            export_to_torchscript(
+                policy, obs_shape, ts_path, config=TorchScriptConfig(optimize=False)
+            )
+
+        calls = []
+        real_load = torch.jit.load
+
+        def fake_load(path):
+            calls.append(path)
+            if len(calls) == 1:
+                raise RuntimeError("Verzeichnis existiert nicht (localized, no English phrase)")
+            return real_load(path)
+
+        monkeypatch.setattr(torch.jit, "load", fake_load)
+        loaded = _safe_load_torchscript(ts_path)
+        assert calls[0] == ts_path
+        # Retried from the ASCII temp copy, not the non-ASCII target.
+        assert calls[1] != ts_path
+        assert loaded is not None
+
+    def test_optimize_failure_warns_instead_of_silently_passing(
+        self, policy, obs_shape, tmp_dir, monkeypatch
+    ):
+        """P3-12: a failed optimization must emit a warning and keep the
+        unoptimized model, instead of being swallowed by a bare except: pass."""
+        from rl_deploy_bench.exporter.torchscript_export import (
+            TorchScriptConfig,
+            export_to_torchscript,
+        )
+
+        ts_path = os.path.join(tmp_dir, "m.pt")
+
+        def boom(_loaded):
+            raise RuntimeError("simulated freeze failure")
+
+        monkeypatch.setattr(torch.jit, "freeze", boom)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            out = export_to_torchscript(
+                policy, obs_shape, ts_path, config=TorchScriptConfig(optimize=True)
+            )
+        assert os.path.exists(out)
+        assert any("optimization failed" in str(w.message) for w in caught)
 
 
 if __name__ == "__main__":

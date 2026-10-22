@@ -182,8 +182,10 @@ def generate_html_report(
         barmode="group",
     )
 
-    # Generate HTML
-    plotly_html = fig.to_html(full_html=False, include_plotlyjs="cdn")
+    # Generate HTML. include_plotlyjs=True inlines the Plotly bundle so the
+    # report is truly self-contained and renders offline (a CDN URL would leave
+    # blank charts when opened without network access).
+    plotly_html = fig.to_html(full_html=False, include_plotlyjs=True)
 
     # Summary table
     summary_rows = []

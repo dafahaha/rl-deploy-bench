@@ -64,7 +64,10 @@ def compare_actions(
     # Per-dimension MSE
     per_dim_mse = [float(np.mean(diff[:, d] ** 2)) for d in range(action_dim)]
 
-    # Cosine similarity (average across samples)
+    # Cosine similarity (average across samples). Two identical zero vectors
+    # are perfectly aligned (cosine = 1.0); a zero vs non-zero pair has no
+    # defined direction and counts as 0.0. Skipping both zero samples used to
+    # collapse the average to 0.0 whenever every action was zero.
     cos_sims = []
     for i in range(num_samples):
         a = actions_original[i]
@@ -73,11 +76,24 @@ def compare_actions(
         norm_b = np.linalg.norm(b)
         if norm_a > 0 and norm_b > 0:
             cos_sims.append(float(np.dot(a, b) / (norm_a * norm_b)))
+        elif norm_a == 0 and norm_b == 0:
+            cos_sims.append(1.0)
+        else:
+            cos_sims.append(0.0)
     avg_cos_sim = float(np.mean(cos_sims)) if cos_sims else 0.0
 
-    # Relative error (MSE / variance of original actions)
+    # Relative error (MSE / variance of original actions). Constant original
+    # actions have zero variance; when MSE is also zero the models agree exactly,
+    # so the relative error is 0.0 rather than the undefined inf produced by a
+    # zero-division. Only a non-zero deviation on a zero-variance baseline is
+    # reported as inf.
     original_var = float(np.var(actions_original))
-    relative_error = mse / original_var if original_var > 0 else float("inf")
+    if original_var > 0:
+        relative_error = mse / original_var
+    elif mse == 0:
+        relative_error = 0.0
+    else:
+        relative_error = float("inf")
 
     return AccuracyComparisonResult(
         num_samples=num_samples,
@@ -128,6 +144,13 @@ def evaluate_quantization_impact(
     mse_threshold: float = 0.01,
 ) -> dict:
     """Evaluate the impact of quantization on action accuracy.
+
+    .. deprecated::
+        This binary-MSE gate is superseded by
+        :func:`rl_deploy_bench.quantizer.int8.evaluate_quantization`, which adds
+        the cosine-similarity gate and the pass/caution/fail verdict. It is kept
+        only for backward compatibility and is not used by the CLI or the
+        benchmark pipeline.
 
     Args:
         original_result: Comparison result for original (FP32) model.

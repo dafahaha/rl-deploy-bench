@@ -121,10 +121,17 @@ INT8 Static (Calibrated)       0.410      0.286      2436.7     0.00001319   pas
 
 | Platform | Monitoring | ONNX Runtime | TensorRT | FP16 | INT8 |
 |----------|-----------|--------------|----------|------|------|
-| **x86 NVIDIA GPU** | ✅ pynvml | ✅ CUDA/CPU | ✅ Framework | ✅ | ✅ |
-| **NVIDIA Jetson** | ✅ jetson-stats | ✅ CPU/CUDA | ✅ Pre-installed | ✅ | ✅ |
+| **x86 NVIDIA GPU** | ✅ pynvml | ✅ CUDA/CPU | ⚠️ Experimental | ✅ | ✅ |
+| **NVIDIA Jetson** | ✅ jetson-stats | ✅ CPU/CUDA | ⚠️ Experimental | ✅ | ✅ |
 | **CPU-only** | ✅ psutil | ✅ CPU | ❌ | ⚠️ Slow | ✅ |
 | **Apple Silicon** | ⚠️ Limited | ✅ CoreML | ❌ | ✅ | ⚠️ |
+
+> **TensorRT maturity**: the TensorRT backend is an **experimental standalone
+> framework**, not a certified integration. It does not yet implement the
+> unified benchmark duck-interface (`warmup()` / `get_provider_info()`), so a
+> TensorRT engine cannot be fed to `benchmark_latency` alongside ONNX /
+> TorchScript for an apples-to-apples comparison, and it has no GPU-tested
+> benchmark here. Full integration is tracked for **v2.0** on the roadmap.
 
 ## 🔄 Quantization Decision Guide
 
@@ -146,6 +153,14 @@ Try FP16 first
                         ├─ pass → Use INT8 Static (best INT8 accuracy)
                         └─ fail → Stay with FP32 or selective quantization
 ```
+
+> **Verdict scope (read before trusting a `pass`)**: the pass/caution/fail
+> verdict is computed on **synthetic random-normal observations**, not on
+> environment rollouts. It only means the action MSE / cosine-similarity gates
+> pass on those synthetic inputs; it does **not** represent closed-loop task
+> success or preserved policy performance. A `pass` does not guarantee the
+> deployed policy still reaches the task goal — always re-validate with
+> real-environment rollouts before deploying.
 
 ## 📁 Project Structure
 
@@ -179,9 +194,11 @@ rl_deploy_bench/
 
 > **Note on TorchScript export**: `export_to_torchscript()` builds on the
 > legacy `torch.jit.trace`/`script`/`freeze` stack. It targets legacy PyTorch
-> deployments (LibTorch C++, mobile, embedded). On Python 3.14+ PyTorch emits
-> `FutureWarning` ("torch.jit ... may break, switch to torch.compile or
-> torch.export"); the current implementation still works on CPython 3.14, but
+> deployments (LibTorch C++, mobile, embedded). Recent PyTorch versions (2.9+;
+> observed on PyTorch 2.14 already on CPython 3.13) emit a `FutureWarning`
+> ("torch.jit ... may break, switch to torch.compile or torch.export"); the
+> warning is driven by the **PyTorch version**, not the Python version, so it
+> appears well before Python 3.14. The current implementation still works, but
 > the forward direction is `torch.export` / `torch.compile` rather than further
 > investment in TorchScript. New projects should prefer the ONNX export path.
 

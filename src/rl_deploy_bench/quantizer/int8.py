@@ -368,6 +368,12 @@ def evaluate_quantization(
     Runs both models on the same test observations and computes RL-specific
     accuracy metrics, then provides an automated recommendation.
 
+    Boundary: the verdict is computed on synthetic (random-normal) test
+    observations. It only means action deviation stays within the MSE / cosine
+    thresholds on those inputs; it does NOT imply closed-loop task success or
+    preserved policy performance. Always re-validate with real-environment
+    rollouts before deploying.
+
     Args:
         original_model_path: Path to original FP32 ONNX model.
         quantized_model_path: Path to quantized ONNX model.
@@ -411,8 +417,12 @@ def evaluate_quantization(
 
     if verdict == "pass":
         recommendation = (
-            "QUANTIZATION ACCEPTABLE: Action deviation is within thresholds. "
-            "INT8 deployment is safe."
+            "QUANTIZATION ACCEPTABLE: Action deviation is within thresholds on "
+            "synthetic test observations. This verdict only means the action "
+            "MSE / cosine gates pass on random synthetic inputs; it does NOT "
+            "represent closed-loop task success or preserved policy performance, "
+            "and must be re-validated with real-environment rollouts before "
+            "deployment."
         )
     elif verdict == "caution" and mse_ok:
         recommendation = (

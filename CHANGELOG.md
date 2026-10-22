@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **TorchScript export crashed on non-ASCII Windows output paths**: `torch.jit.save` raised a misleading "Parent directory ... does not exist" even after `makedirs` succeeded. The write side now saves to a uniquely named ASCII temp file and `shutil.move`s it onto the target (symmetric with the existing load-side fallback); the optimize step loads through the same safe helper.
+- **CLI `compare` printed no verdict**: it now calls `evaluate_quantization` and prints the pass/caution/fail verdict and recommendation in the summary instead of raw MSE/cosine alone.
+- **CLI static quantization hardcoded input name `observation`**: `quantize --mode static` now reads the model's actual ONNX input name by default and accepts `--input-name` to override, so custom input names (e.g. `obs`) calibrate against the correct feed.
+- **FP16 manual fallback `onnx.checker` had no direct guard**: the checker call is now asserted by a test, and a checker failure propagates instead of being saved unvalidated.
+- **HTML report claimed self-contained but loaded Plotly from the CDN**: Plotly is now inlined (`include_plotlyjs=True`) so charts render offline.
+- **Zero-vector / constant-action edge cases in `compare_actions`**: two identical all-zero actions now give cosine 1.0 (not 0.0); zero-variance constant actions with exact match give relative_error 0.0 (not inf).
+- **TorchScript optimization failure was swallowed by a bare `except: pass`**: it now emits a warning and keeps the unoptimized model.
+- **Non-ASCII TorchScript load fallback triggered only on the literal "No such file or directory" message**: it now retries via the ASCII temp copy on any RuntimeError for a non-ASCII path.
+- **`num_episodes=0` / empty calibration dataset delivered silently**: both now emit a warning.
+
+### Changed
+- Verdict wording (`evaluate_quantization` / `evaluate_fp16_impact`) and README/API now state the boundary: a pass/caution/fail verdict reflects action deviation on synthetic observations only, not closed-loop task success; real-environment rollouts are required before deployment.
+- README platform table marks TensorRT as **experimental** (standalone framework, not yet wired into the unified benchmark duck-interface) instead of a certified ✅.
+- FutureWarning attribution corrected: the legacy `torch.jit` warning is driven by the PyTorch version (observed on PyTorch 2.14 / CPython 3.13), not gated on Python 3.14.
+- `evaluate_quantization_impact` (superseded binary-MSE gate) is marked deprecated in its docstring; kept for backward compatibility.
+
 ## [1.1.0] - 2026-10-07
 
 ### Fixed

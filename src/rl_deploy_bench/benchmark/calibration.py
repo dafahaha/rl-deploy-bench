@@ -12,6 +12,7 @@ during deployment.
 from __future__ import annotations
 
 import os
+import warnings
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Tuple
 
@@ -211,6 +212,25 @@ class EnvironmentCalibrationGenerator:
 
         finally:
             env.close()
+
+        # Degenerate bounds: num_episodes=0 stops the run before any useful
+        # episode, and a filter that rejects everything (or a too-tight bound)
+        # yields an empty dataset, which leaves static quantization behavior
+        # undefined. Warn loudly instead of silently delivering either.
+        if config.num_episodes == 0:
+            warnings.warn(
+                "num_episodes=0 bounds calibration to no completed episodes; "
+                "the resulting dataset may be empty or truncated. Raise "
+                "num_episodes to collect observations."
+            )
+        if len(observations) == 0:
+            warnings.warn(
+                f"Calibration produced 0 observations "
+                f"(num_episodes={config.num_episodes}, "
+                f"num_samples={config.num_samples}); an empty dataset makes "
+                "static quantization behavior undefined. Raise num_episodes / "
+                "num_samples or relax observation_filter."
+            )
 
         # Trim to exact number of samples
         observations = np.array(observations[: config.num_samples], dtype=np.float32)
