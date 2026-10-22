@@ -45,6 +45,8 @@ jobs:
 
       - name: Run tests
         run: |
+          # Temporary: emit the actual verdict values as annotations.
+          python ci_diag_values.py
           # Pipe through tee so the output is captured to a file; on failure we
           # surface the failing test name(s) as error annotations (the raw log
           # lines are not available without signing in).
