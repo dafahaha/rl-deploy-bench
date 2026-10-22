@@ -38,3 +38,11 @@ for ns in (20, 100):
     )
     print(line)
     print(f"::warning title=CI verdict values::{line}")
+
+    # Emit the quantized graph node op types so we can see the structure.
+    import onnx
+    m = onnx.load(q)
+    ops = [n.op_type for n in m.graph.node]
+    from collections import Counter
+    summ = dict(Counter(ops))
+    print(f"::warning title=ns{ns} graph::{summ}")
