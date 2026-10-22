@@ -43,7 +43,13 @@ class SimplePolicy(nn.Module):
 
 @pytest.fixture
 def policy():
-    """Create a simple policy."""
+    """Create a simple policy.
+
+    The torch RNG is seeded before constructing the module so the policy
+    weights are deterministic across runs (the quantization/FP16 verdict
+    tests then compare fixed weights, instead of weights drawn from the
+    global RNG)."""
+    torch.manual_seed(0)
     p = SimplePolicy()
     p.eval()
     return p

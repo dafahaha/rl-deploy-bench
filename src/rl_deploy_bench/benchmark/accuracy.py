@@ -115,6 +115,7 @@ def generate_test_observations(
     distribution: str = "normal",
     low: Optional[np.ndarray] = None,
     high: Optional[np.ndarray] = None,
+    seed: Optional[int] = None,
 ) -> np.ndarray:
     """Generate test observations for accuracy comparison.
 
@@ -124,16 +125,21 @@ def generate_test_observations(
         distribution: 'normal', 'uniform', or 'real' (from environment).
         low: Lower bounds for uniform distribution.
         high: Upper bounds for uniform distribution.
+        seed: Optional RNG seed. When provided a private ``numpy.random``
+            generator is used and the output is reproducible across runs;
+            when None (default) the global numpy RNG is used and behavior
+            is unchanged.
 
     Returns:
         Array of observations with shape (num_samples, *observation_shape).
     """
+    rng = np.random.RandomState(seed) if seed is not None else np.random
     if distribution == "normal":
-        return np.random.randn(num_samples, *observation_shape).astype(np.float32)
+        return rng.randn(num_samples, *observation_shape).astype(np.float32)
     elif distribution == "uniform":
         if low is None or high is None:
-            return np.random.uniform(-1, 1, (num_samples, *observation_shape)).astype(np.float32)
-        return np.random.uniform(low, high, (num_samples, *observation_shape)).astype(np.float32)
+            return rng.uniform(-1, 1, (num_samples, *observation_shape)).astype(np.float32)
+        return rng.uniform(low, high, (num_samples, *observation_shape)).astype(np.float32)
     else:
         raise ValueError(f"Unsupported distribution: {distribution}")
 

@@ -192,6 +192,7 @@ def evaluate_fp16_impact(
     num_samples: int = 500,
     mse_threshold: float = 0.01,
     cosine_threshold: float = 0.99,
+    seed: int = 0,
 ) -> dict:
     """Evaluate the impact of FP16 conversion on action accuracy.
 
@@ -210,6 +211,8 @@ def evaluate_fp16_impact(
         cosine_threshold: Minimum acceptable action cosine similarity. Defaults
             to 0.99, matching ``evaluate_quantization`` so the two evaluators
             share the same pass/fail semantics.
+        seed: RNG seed for the synthetic test observations (default 0).
+            Pinning it makes the verdict reproducible across runs.
 
     Returns:
         Dictionary with evaluation results and recommendation.
@@ -221,7 +224,7 @@ def evaluate_fp16_impact(
     orig_inf = OnnxRuntimeInference(original_model_path)
     fp16_inf = OnnxRuntimeInference(fp16_model_path)
 
-    observations = generate_test_observations(observation_shape, num_samples)
+    observations = generate_test_observations(observation_shape, num_samples, seed=seed)
 
     orig_actions = []
     fp16_actions = []

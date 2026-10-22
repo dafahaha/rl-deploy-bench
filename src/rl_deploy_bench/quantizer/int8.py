@@ -362,6 +362,7 @@ def evaluate_quantization(
     num_samples: int = 500,
     mse_threshold: float = 0.01,
     cosine_threshold: float = 0.99,
+    seed: int = 0,
 ) -> dict:
     """Evaluate the impact of quantization on action accuracy.
 
@@ -381,6 +382,10 @@ def evaluate_quantization(
         num_samples: Number of test samples.
         mse_threshold: Maximum acceptable action MSE.
         cosine_threshold: Minimum acceptable cosine similarity.
+        seed: RNG seed for the synthetic test observations (default 0).
+            Pinning it makes the verdict reproducible across runs; without a
+            seed the random observations could move the MSE/cosine gates and
+            flip the verdict near a threshold.
 
     Returns:
         Dictionary with evaluation results and recommendation.
@@ -393,7 +398,7 @@ def evaluate_quantization(
     quant_inf = OnnxRuntimeInference(quantized_model_path)
 
     # Generate test observations
-    observations = generate_test_observations(observation_shape, num_samples)
+    observations = generate_test_observations(observation_shape, num_samples, seed=seed)
 
     # Run inference
     orig_actions = []

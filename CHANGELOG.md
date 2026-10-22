@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **TorchScript optimization failure was swallowed by a bare `except: pass`**: it now emits a warning and keeps the unoptimized model.
 - **Non-ASCII TorchScript load fallback triggered only on the literal "No such file or directory" message**: it now retries via the ASCII temp copy on any RuntimeError for a non-ASCII path.
 - **`num_episodes=0` / empty calibration dataset delivered silently**: both now emit a warning.
+- **Flaky pass/caution verdict in CI**: `evaluate_quantization` / `evaluate_fp16_impact` drew their synthetic test observations from the global numpy RNG without a seed, so a near-threshold run could move the MSE/cosine gates and flip the verdict between runs. Both evaluators now accept a `seed` argument (default 0) and `generate_test_observations` supports a private seeded generator; the test `policy` fixture seeds torch as well. The MSE/cosine values and verdict are now byte-for-byte reproducible across runs and Python versions.
 
 ### Changed
 - Verdict wording (`evaluate_quantization` / `evaluate_fp16_impact`) and README/API now state the boundary: a pass/caution/fail verdict reflects action deviation on synthetic observations only, not closed-loop task success; real-environment rollouts are required before deployment.
