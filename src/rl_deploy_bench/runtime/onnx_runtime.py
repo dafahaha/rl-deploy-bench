@@ -5,6 +5,7 @@ Reuses onnxruntime library for cross-platform inference (CPU, CUDA, etc.).
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
@@ -32,6 +33,7 @@ class OnnxRuntimeInference:
         model_path: str,
         providers: Optional[Sequence[str]] = None,
         provider_options: Optional[List[dict]] = None,
+        num_threads: Optional[int] = None,
     ):
         import onnxruntime as ort
 
@@ -46,8 +48,28 @@ class OnnxRuntimeInference:
             providers.append("CPUExecutionProvider")
 
         self.providers = list(providers)
+
+        # Session options. When num_threads is given (or the
+        # RL_DEPLOY_BENCH_ORT_THREADS environment variable is set), pin both
+        # the intra-op and inter-op thread pools. Multi-threaded INT8
+        # MatMul/QDQ reductions can otherwise change the action output (and the
+        # accuracy verdict) from run to run on a loaded, multi-core runner.
+        if num_threads is None:
+            env_threads = os.environ.get("RL_DEPLOY_BENCH_ORT_THREADS")
+            if env_threads:
+                try:
+                    num_threads = int(env_threads)
+                except ValueError:
+                    num_threads = None
+        sess_options = None
+        if num_threads is not None:
+            sess_options = ort.SessionOptions()
+            sess_options.intra_op_num_threads = num_threads
+            sess_options.inter_op_num_threads = num_threads
+
         self.session = ort.InferenceSession(
             model_path,
+            sess_options=sess_options,
             providers=self.providers,
             provider_options=provider_options,
         )

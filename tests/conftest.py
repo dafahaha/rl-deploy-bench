@@ -15,6 +15,12 @@ import os
 for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
     os.environ.setdefault(var, "1")
 
+# Pin ONNX Runtime's own intra/inter-op thread pools (separate from the BLAS
+# threads above). Without this, multi-threaded INT8 MatMul/QDQ reductions on a
+# loaded, multi-core runner can change the action output run to run and flip
+# the accuracy verdict. OnnxRuntimeInference reads this environment variable.
+os.environ.setdefault("RL_DEPLOY_BENCH_ORT_THREADS", "1")
+
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
 
