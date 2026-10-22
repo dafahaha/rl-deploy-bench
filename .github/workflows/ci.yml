@@ -42,7 +42,15 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest tests/ -v --tb=short
+          set -o pipefail
+          pytest tests/ -v --tb=short 2>&1 | tee pytest.log || test_rc=${PIPESTATUS[0]}
+          if [ "${test_rc:-0}" != "0" ]; then
+            echo "Pytest failed with exit code ${test_rc}; failing test(s):"
+            grep -E "^FAILED[[:space:]]" pytest.log | while IFS= read -r line; do
+              echo "::error title=Pytest failure::${line}"
+            done
+            exit "${test_rc}"
+          fi
 
       - name: Check code formatting
         run: |
