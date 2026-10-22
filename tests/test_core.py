@@ -1145,7 +1145,8 @@ class TestReportGeneration:
         # The latency table data row is the one whose first cell is the model
         # name and whose later cells are latency/FPS numbers (contains a dot).
         data_rows = [
-            ln for ln in lines
+            ln
+            for ln in lines
             if ln.startswith("|") and ln.count("|") >= 8 and re.search(r"\d+\.\d+", ln)
         ]
         assert data_rows, "latency table data row not found"
@@ -1753,9 +1754,9 @@ class TestCLICompare:
         # matched the recommendation text even when the verdict variable was
         # hardcoded to fail. The colon anchors this to the standalone line
         # (the table's Verdict cell has no colon).
-        assert re.search(r"Verdict:\s*PASS\b", out), (
-            f"expected standalone 'Verdict: PASS', got:\n{out}"
-        )
+        assert re.search(
+            r"Verdict:\s*PASS\b", out
+        ), f"expected standalone 'Verdict: PASS', got:\n{out}"
         assert not re.search(r"Verdict:\s*FAIL\b", out)
 
     def test_cli_quantize_explicit_input_name_forwarded(
