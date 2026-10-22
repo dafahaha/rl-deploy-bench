@@ -38,6 +38,14 @@ for ns in (20, 100):
     )
     print(f"::warning title=CI verdict values::{line}")
 
+    # Hash the quantized model bytes and the input onnx bytes to determine
+    # whether the bad model is a different artifact or the same artifact
+    # executed differently by the runtime.
+    import hashlib
+    qhash = hashlib.sha256(open(q, 'rb').read()).hexdigest()[:16]
+    ohash = hashlib.sha256(open(onnx_path, 'rb').read()).hexdigest()[:16]
+    print(f"::warning title=ns{ns} hashes::onnx={ohash} q={qhash}")
+
     # Re-run the first 5 observations directly and emit orig vs quant actions.
     orig_inf = OnnxRuntimeInference(onnx_path)
     quant_inf = OnnxRuntimeInference(q)
