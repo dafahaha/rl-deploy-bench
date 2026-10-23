@@ -44,7 +44,8 @@ sess = ort.InferenceSession(m.SerializeToString(), providers=['CPUExecutionProvi
 
 for idx in range(3):
     obs = np.random.RandomState(0).randn(3, 4).astype(np.float32)[idx:idx+1]
-    qy, sc, zp = sess.run(None, {'observation': obs})
+    outs = sess.run(None, {'observation': obs})
+    qy, sc, zp = outs[-3], outs[-2], outs[-1]
     print(f"::warning title=dql obs{idx}::q={qy[0].tolist()} scale={float(sc):.6f} zp={int(zp)}")
 
 r = evaluate_quantization(onnx_path, q, (4,), num_samples=20, seed=0)
