@@ -374,7 +374,7 @@ def compare(
 
     from .benchmark.accuracy import compare_actions, generate_test_observations
     from .benchmark.latency import benchmark_latency
-    from .quantizer.int8 import compare_model_sizes, evaluate_quantization
+    from .quantizer.int8 import _evaluation_from_acc, compare_model_sizes
     from .reporter.markdown import generate_markdown_report
     from .runtime.onnx_runtime import OnnxRuntimeInference
     from .utils.platform import detect_platform
@@ -432,11 +432,12 @@ def compare(
     # Size comparison
     size_info = compare_model_sizes(original, quantized)
 
-    # Automated pass/caution/fail verdict using the same gates as the Python
-    # API (evaluate_quantization), instead of printing raw MSE/cosine with no
-    # recommendation. The verdict only reflects action deviation on synthetic
-    # observations; see the boundary note in evaluate_quantization.
-    eval_result = evaluate_quantization(original, quantized, shape, num_samples=num_samples)
+    # Build the pass/caution/fail verdict from the acc_result already computed
+    # above (the same gates as the Python API), instead of re-loading the
+    # models and re-running the evaluation a second time. The verdict only
+    # reflects action deviation on synthetic observations; see the boundary
+    # note in evaluate_quantization.
+    eval_result = _evaluation_from_acc(acc_result, size_info, num_samples, 0.01, 0.99)
     verdict = eval_result["verdict"]
     verdict_style = {"pass": "green", "caution": "yellow", "fail": "red"}[verdict]
 

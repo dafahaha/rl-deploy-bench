@@ -34,12 +34,17 @@ def create_monitor(
     if backend == "nvidia":
         return NvidiaGPUMonitor(gpu_index=gpu_index)
     elif backend == "jetson":
-        try:
-            from .jetson import JetsonMonitor
+        # jtop is imported lazily inside JetsonMonitor.start(), so the module
+        # import never fails even when jetson-stats is missing. Detect its
+        # availability here so we can fall back to CPU instead of returning a
+        # JetsonMonitor that only fails later at start().
+        import importlib.util
 
-            return JetsonMonitor()
-        except ImportError:
+        if importlib.util.find_spec("jtop") is None:
             return CPUMonitor()
+        from .jetson import JetsonMonitor
+
+        return JetsonMonitor()
     else:
         return CPUMonitor()
 

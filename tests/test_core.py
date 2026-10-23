@@ -174,6 +174,27 @@ class TestNvidiaGPUMonitor:
         monitor.stop()
         assert shutdown_calls == [1]
 
+    def test_create_monitor_jetson_falls_back_to_cpu_without_jtop(self, monkeypatch):
+        """P3-10: when backend='jetson' but jtop is not installed, the factory
+        must return a CPUMonitor rather than a JetsonMonitor that only fails at
+        start() (jtop is imported lazily, so the module import never fails)."""
+        import importlib.util
+
+        from rl_deploy_bench.monitor import create_monitor
+        from rl_deploy_bench.monitor.cpu import CPUMonitor
+
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+        monitor = create_monitor(backend="jetson")
+        assert isinstance(monitor, CPUMonitor)
+
+    def test_create_monitor_explicit_backends(self):
+        """P3-15: the monitor factory branches for cpu/nvidia/jetson are covered
+        for the CPU path (the only hardware-independent one)."""
+        from rl_deploy_bench.monitor import create_monitor
+        from rl_deploy_bench.monitor.cpu import CPUMonitor
+
+        assert isinstance(create_monitor(backend="cpu"), CPUMonitor)
+
 
 # ============================================================
 # Model export tests
@@ -705,6 +726,55 @@ class TestQuantization:
         assert "size_comparison" in result
         assert result["verdict"] in ("pass", "caution", "fail")
 
+    def test_quantize_and_evaluate_dynamic_one_click(self, policy, obs_shape, tmp_dir):
+        """P3-15: the one-click quantize_and_evaluate (dynamic) must quantize,
+        evaluate, and return paths plus a complete evaluation."""
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer.int8 import quantize_and_evaluate
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+        result = quantize_and_evaluate(
+            onnx_path, obs_shape, output_dir=tmp_dir, mode="dynamic", num_eval_samples=100
+        )
+        assert os.path.exists(result["quantized_model"])
+        assert result["mode"] == "dynamic"
+        assert "verdict" in result["evaluation"]
+        assert result["evaluation"]["verdict"] == "pass"
+
+    def test_quantize_and_evaluate_static_forwards_input_name(
+        self, policy, obs_shape, tmp_dir, monkeypatch
+    ):
+        """P3-6: the one-click static path must forward the input name (default
+        = the model's actual input name) instead of the hardcoded "observation"."""
+        from rl_deploy_bench.exporter.onnx_export import export_to_onnx
+        from rl_deploy_bench.quantizer import int8 as int8_mod
+
+        onnx_path = os.path.join(tmp_dir, "test.onnx")
+        export_to_onnx(policy, obs_shape, onnx_path)
+
+        captured = {}
+
+        def fake_dataset_quantize(model_path, dataset, output_path, input_name="observation", **kw):
+            captured["input_name"] = input_name
+            # Produce a real (valid) model at output_path so the subsequent
+            # evaluate step can load it (a dynamic quantize is sufficient).
+            return int8_mod.dynamic_quantize(model_path, output_path)
+
+        def fake_dataset(length=10):
+            return np.random.randn(length, *obs_shape).astype(np.float32)
+
+        monkeypatch.setattr(int8_mod, "static_quantize_with_dataset", fake_dataset_quantize)
+        int8_mod.quantize_and_evaluate(
+            onnx_path,
+            obs_shape,
+            output_dir=tmp_dir,
+            mode="static",
+            calibration_dataset=fake_dataset(),
+            num_eval_samples=10,
+        )
+        assert captured["input_name"] == "observation"  # the model's real input name
+
     @pytest.mark.parametrize(
         "mse_ok, cosine_ok, expected",
         [
@@ -946,6 +1016,28 @@ class TestQuantization:
 
         monkeypatch.setattr(onnx.checker, "check_model", boom)
         with pytest.raises(Exception, match="simulated invalid graph"):
+            convert_onnx_to_fp16(onnx_path, os.path.join(tmp_dir, "fp16.onnx"))
+
+    def test_fp16_manual_fallback_errors_when_output_has_no_producer(self, tmp_dir, monkeypatch):
+        """P3-8: when a graph output is produced directly by an initializer (no
+        node to insert the output Cast after), the manual rewrite must raise a
+        clear error instead of inserting at the front and failing onnx.checker
+        with a confusing topology error."""
+        import onnx
+        from onnx import TensorProto, helper, numpy_helper
+
+        from rl_deploy_bench.quantizer.fp16 import convert_onnx_to_fp16
+
+        # Graph with one float output wired directly to an initializer.
+        const = numpy_helper.from_array(np.array([1.0, 2.0], dtype=np.float32), name="c")
+        out = helper.make_tensor_value_info("c", TensorProto.FLOAT, [2])
+        graph = helper.make_graph([], "g", [], [out], initializer=[const])
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+        onnx_path = os.path.join(tmp_dir, "const_out.onnx")
+        onnx.save(model, onnx_path)
+
+        monkeypatch.setitem(sys.modules, "onnxruntime.transformers.float16", None)
+        with pytest.raises(RuntimeError, match="could not find the node producing"):
             convert_onnx_to_fp16(onnx_path, os.path.join(tmp_dir, "fp16.onnx"))
 
     def test_evaluate_fp16_impact_respects_cosine_threshold(self, policy, obs_shape, tmp_dir):

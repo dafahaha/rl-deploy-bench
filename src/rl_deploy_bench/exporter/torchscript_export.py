@@ -281,7 +281,14 @@ class TorchScriptInference:
             observation_shape: Shape of observation for warmup.
         """
         if observation_shape is None:
-            observation_shape = (4,)
+            # Derive the per-observation shape from the shape captured on the
+            # first infer() instead of a hardcoded (4,), which would mismatch a
+            # policy that is not 4-dimensional. Fall back to (4,) only when no
+            # infer() has run yet.
+            if self._input_shape is not None:
+                observation_shape = tuple(self._input_shape[1:])
+            else:
+                observation_shape = (4,)
 
         obs = torch.randn(1, *observation_shape, dtype=torch.float32, device=self.device)
         with torch.no_grad():

@@ -175,6 +175,12 @@ knobs; leave it `None` for the defaults.
 - `warmup(num_runs=10, observation_shape=None)`: Warm up the session
 - `get_provider_info() -> dict`: Get active provider info
 
+> **Assumption (scope boundary):** the runtime assumes a **single input** and
+> treats the **first output as the action** (see `get_inputs()[0]` and
+> `outputs[0]`). Models with multiple inputs, multiple outputs (e.g. separate
+> value/action heads), or a fixed non-batch input shape are not wired up; name
+> the inputs/outputs explicitly if you need them.
+
 ### `TensorRTEngine(engine_path=None)`
 
 TensorRT inference engine (requires TensorRT installation).

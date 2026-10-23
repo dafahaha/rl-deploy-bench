@@ -124,7 +124,7 @@ INT8 Static (Calibrated)       0.410      0.286      2436.7     0.00001319   pas
 | **x86 NVIDIA GPU** | ✅ pynvml | ✅ CUDA/CPU | ⚠️ Experimental | ✅ | ✅ |
 | **NVIDIA Jetson** | ✅ jetson-stats | ✅ CPU/CUDA | ⚠️ Experimental | ✅ | ✅ |
 | **CPU-only** | ✅ psutil | ✅ CPU | ❌ | ⚠️ Slow | ✅ |
-| **Apple Silicon** | ⚠️ Limited | ✅ CoreML | ❌ | ✅ | ⚠️ |
+| **Apple Silicon** | ⚠️ Limited | ⚠️ CoreML (via ORT auto-EP, not explicitly adapted) | ❌ | ✅ | ⚠️ |
 
 > **TensorRT maturity**: the TensorRT backend is an **experimental standalone
 > framework**, not a certified integration. It does not yet implement the

@@ -66,9 +66,9 @@ def generate_markdown_report(
         lines.append("")
         lines.append("| Property | Value |")
         lines.append("|----------|-------|")
-        lines.append(f"| OS | {platform_info.os} |")
-        lines.append(f"| Architecture | {platform_info.arch} |")
-        lines.append(f"| Python | {platform_info.python_version} |")
+        lines.append(f"| OS | {_escape_pipe(platform_info.os)} |")
+        lines.append(f"| Architecture | {_escape_pipe(platform_info.arch)} |")
+        lines.append(f"| Python | {_escape_pipe(platform_info.python_version)} |")
         lines.append(f"| CPU Cores | {platform_info.cpu_count} |")
         lines.append(f"| Total Memory | {platform_info.total_memory_gb} GB |")
         if platform_info.has_nvidia_gpu:

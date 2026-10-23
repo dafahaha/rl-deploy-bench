@@ -54,7 +54,7 @@ RL部署三大坑，你踩过几个？
 坑3：不知道部署后延迟够不够？
 → P50/P90/P95/P99百分位+吞吐量+GPU功耗/温度，一次测全
 
-工具已开源，支持x86 GPU/Jetson/CPU，3个完整示例，22个单元测试。
+工具已开源，支持x86 GPU/Jetson/CPU，3个完整示例，74个单元测试。
 
 链接在评论区👇
 
@@ -142,7 +142,7 @@ So I built **RL-Deploy-Bench**: a complete toolkit for RL model deployment.
 
 **Tech stack**: Python, PyTorch, ONNX Runtime, TensorRT (framework), Gymnasium, Typer, Rich, Plotly, Jinja2
 
-**Stats**: 23 source files, 9 modules, 3 examples, 22 unit tests (all passing), GitHub Actions CI
+**Stats**: 26 source files, 9 modules, 3 examples, 74 unit tests (all passing), GitHub Actions CI
 
 Would love feedback from the community! Especially interested in:
 - What deployment pain points am I missing?

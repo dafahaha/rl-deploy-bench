@@ -158,6 +158,17 @@ def convert_onnx_to_fp16(
                             node.output[i] = fp16_output_name
                             producer_index = idx
 
+                if producer_index == -1:
+                    # The output is produced by an initializer/constant with no
+                    # node to insert the Cast after; inserting at the front would
+                    # break topology and onnx.checker would raise a confusing
+                    # error. Surface a clear cause instead.
+                    raise RuntimeError(
+                        f"manual FP16 rewrite could not find the node producing "
+                        f"output {out.name!r} (it may come directly from an "
+                        "initializer); use the ORT converter path instead"
+                    )
+
                 cast_node = helper.make_node(
                     "Cast",
                     inputs=[fp16_output_name],

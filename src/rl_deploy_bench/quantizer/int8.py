@@ -51,6 +51,15 @@ def _shape_inferred_temp_model(onnx_model_path: str) -> str:
     return tmp_path
 
 
+def _get_default_input_name(onnx_model_path: str) -> str:
+    """Read the model's actual input name (instead of the hardcoded
+    "observation") so static quantization on a custom input name feeds the
+    correct tensor."""
+    from ..runtime.onnx_runtime import OnnxRuntimeInference
+
+    return OnnxRuntimeInference(onnx_model_path).input_name
+
+
 @dataclass
 class QuantizationConfig:
     """Configuration for model quantization."""
@@ -424,7 +433,20 @@ def evaluate_quantization(
     # Size comparison
     size_info = compare_model_sizes(original_model_path, quantized_model_path)
 
-    # Determine recommendation
+    return _evaluation_from_acc(acc, size_info, num_samples, mse_threshold, cosine_threshold)
+
+
+def _evaluation_from_acc(
+    acc,
+    size_info,
+    num_samples: int,
+    mse_threshold: float,
+    cosine_threshold: float,
+) -> dict:
+    """Build the evaluation result dict (verdict + recommendation + metrics) from
+    an already-computed accuracy comparison. Shared by ``evaluate_quantization``
+    and the CLI ``compare`` command so the latter can reuse its inference results
+    instead of re-running the whole evaluation (P3-5)."""
     mse_ok = acc.action_mse < mse_threshold
     cosine_ok = acc.action_cosine_similarity > cosine_threshold
     verdict = _accuracy_verdict(mse_ok, cosine_ok)
@@ -482,6 +504,7 @@ def quantize_and_evaluate(
     calibration_dataset=None,
     num_eval_samples: int = 500,
     mse_threshold: float = 0.01,
+    input_name: Optional[str] = None,
 ) -> dict:
     """One-click quantization and evaluation.
 
@@ -496,10 +519,16 @@ def quantize_and_evaluate(
         calibration_dataset: CalibrationDataset for static mode.
         num_eval_samples: Number of samples for evaluation.
         mse_threshold: MSE threshold for evaluation.
+        input_name: Model input name for static mode. When None, the model's
+            actual input name is read (rather than the hardcoded "observation"),
+            so custom input names (e.g. "obs") calibrate against the correct
+            feed.
 
     Returns:
         Dictionary with quantization path, evaluation results, and recommendation.
     """
+    if input_name is None:
+        input_name = _get_default_input_name(onnx_model_path)
     base_name = os.path.splitext(os.path.basename(onnx_model_path))[0]
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(onnx_model_path))
@@ -512,7 +541,7 @@ def quantize_and_evaluate(
             raise ValueError("calibration_dataset is required for static quantization")
         quantized_path = os.path.join(output_dir, f"{base_name}_int8_static.onnx")
         quantized_path = static_quantize_with_dataset(
-            onnx_model_path, calibration_dataset, quantized_path
+            onnx_model_path, calibration_dataset, quantized_path, input_name=input_name
         )
     else:
         raise ValueError(f"Unknown quantization mode: {mode}. Use 'dynamic' or 'static'.")

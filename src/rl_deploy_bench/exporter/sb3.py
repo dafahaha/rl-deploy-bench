@@ -186,12 +186,15 @@ def load_sb3_model(model_path: str, algo: Optional[str] = None, env=None):
         model_class = algo_map[algo]
         return model_class.load(model_path, env=env)
 
-    # Try to infer algorithm
+    # Try to infer algorithm. Only catch the load/format errors that indicate a
+    # wrong algorithm (SB3 raises ValueError/KeyError on a policy-class or
+    # parameter mismatch); a real failure such as an environment construction
+    # error must propagate rather than being swallowed and misreported.
     for name, model_class in algo_map.items():
         try:
             model = model_class.load(model_path, env=env)
             return model
-        except Exception:
+        except (ValueError, KeyError):
             continue
 
     raise ValueError(
