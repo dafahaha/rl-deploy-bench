@@ -111,9 +111,7 @@ def export_to_onnx(
     # Create dummy input. Use a private seeded generator instead of the global
     # RNG so the trace (and any constant folding it triggers) is reproducible.
     dummy_input = torch.Generator().manual_seed(0)
-    dummy_input = torch.randn(
-        1, *observation_shape, dtype=torch.float32, generator=dummy_input
-    )
+    dummy_input = torch.randn(1, *observation_shape, dtype=torch.float32, generator=dummy_input)
 
     # Dynamic axes
     dynamic_axes = None

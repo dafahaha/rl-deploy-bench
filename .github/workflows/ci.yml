@@ -8,9 +8,7 @@ on:
 
 jobs:
   test:
-    # Pinned to 24.04: ubuntu-latest migrated to Ubuntu 26 and the Run tests
-    # step began failing intermittently (a near-threshold compare verdict)
-    # across the Python matrix. 24.04 is the stable, reproducible runner.
+    # Pinned to 24.04 for a stable, reproducible runner image.
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -45,22 +43,15 @@ jobs:
 
       - name: Run tests
         run: |
-          # Temporary: emit the actual verdict values as annotations.
-          python ci_diag_values.py
-          # Pipe through tee so the output is captured to a file; on failure we
-          # surface the failing test name(s) as error annotations (the raw log
-          # lines are not available without signing in).
+          # Capture the output to a file; on failure surface the failing test
+          # name(s) as error annotations (the raw Actions logs require a
+          # sign-in, so the failure names would otherwise be invisible).
           set -o pipefail
           pytest tests/ -v --tb=short 2>&1 | tee pytest.log || test_rc=${PIPESTATUS[0]}
           if [ "${test_rc:-0}" != "0" ]; then
             echo "Pytest failed with exit code ${test_rc}; failing test(s):"
             grep -E "^FAILED[[:space:]]" pytest.log | while IFS= read -r line; do
               echo "::error title=Pytest failure::${line}"
-            done
-            # Surface the standalone verdict line and the MSE/cosine table cells
-            # from the captured compare output so the actual numbers are visible.
-            grep -E "Verdict:|Action MSE|Cosine Sim" pytest.log | sort -u | while IFS= read -r line; do
-              echo "::warning title=Observed verdict output::${line}"
             done
             exit "${test_rc}"
           fi

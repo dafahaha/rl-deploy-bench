@@ -59,7 +59,16 @@ class QuantizationConfig:
     activation_type: str = "int8"  # 'int8' or 'uint8'
     weight_type: str = "int8"  # 'int8' or 'uint8'
     per_channel: bool = True
-    reduce_range: bool = False
+    # Dynamic quantization always emits the QOperator path (DynamicQuantizeLinear
+    # -> uint8 activation, int8 weight -> MatMulInteger). On x86-64 CPUs without
+    # VNNI (e.g. AMD Zen 3 / EPYC 7763, older AVX2), the U8S8 MatMulInteger
+    # kernel uses the VPMADDUBSW instruction, whose adjacent-pair sum saturates
+    # to int16 and silently corrupts the int32 accumulation (observed: a
+    # byte-identical model, mse 1.8e-6 on VNNI/AVX512 runners but 3.4e-3 on
+    # EPYC 7763). Reducing weights to 7 bits keeps the worst-case pair
+    # (255*64*2 = 32640) inside int16, so the result is correct on every x86.
+    # See https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html
+    reduce_range: bool = True
 
 
 def dynamic_quantize(
