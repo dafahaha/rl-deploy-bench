@@ -61,8 +61,7 @@ sess2 = ort.InferenceSession(m2.SerializeToString(), providers=['CPUExecutionPro
 obs = np.random.RandomState(0).randn(1, 4).astype(np.float32)
 outs2 = sess2.run(None, {'observation': obs})
 hidden, raw = outs2[-2], outs2[-1]
-print(f"::warning title=raw int32 obs0::first8={raw[0][:8].tolist()}")
-print(f"::warning title=hidden obs0::first8={np.round(hidden[0][:8],4).tolist()}")
+print(f"::warning title=raw int32 all32::raw={raw[0].tolist()}")
 
 r = evaluate_quantization(onnx_path, q, (4,), num_samples=20, seed=0)
 print(f"::warning title=verdict::mse={r['action_mse']:.6e} cos={r['cosine_similarity']:.6f} {r['verdict']}")
