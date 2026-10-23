@@ -48,5 +48,21 @@ for idx in range(3):
     qy, sc, zp = outs[-3], outs[-2], outs[-1]
     print(f"::warning title=dql obs{idx}::q={qy[0].tolist()} scale={float(sc):.6f} zp={int(zp)}")
 
+# Emit the hidden layer (after first MatMul+bias, before ReLU) for obs0,
+# and the MatMulInteger raw int32 output, to localize the integer GEMM error.
+m2 = onnx.load(q)
+# Hidden layer (Gemm_output_0) is an intermediate; add it as an output.
+hidden_name = '/policy/net/net.0/Gemm_output_0'
+m2.graph.output.append(onnx.helper.make_tensor_value_info(hidden_name, 1, None))
+# Raw int32 MatMul output.
+raw_name = '/policy/net/net.0/Gemm_output_0_MatMul_output_quantized'
+m2.graph.output.append(onnx.helper.make_tensor_value_info(raw_name, 6, None))
+sess2 = ort.InferenceSession(m2.SerializeToString(), providers=['CPUExecutionProvider'])
+obs = np.random.RandomState(0).randn(1, 4).astype(np.float32)
+outs2 = sess2.run(None, {'observation': obs})
+hidden, raw = outs2[-2], outs2[-1]
+print(f"::warning title=raw int32 obs0::first8={raw[0][:8].tolist()}")
+print(f"::warning title=hidden obs0::first8={np.round(hidden[0][:8],4).tolist()}")
+
 r = evaluate_quantization(onnx_path, q, (4,), num_samples=20, seed=0)
 print(f"::warning title=verdict::mse={r['action_mse']:.6e} cos={r['cosine_similarity']:.6f} {r['verdict']}")
