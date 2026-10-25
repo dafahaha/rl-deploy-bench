@@ -71,9 +71,11 @@ rl-deploy-bench quantize policy.onnx --mode static --calibration-file calib.npz
 不只是测mean latency，而是完整的百分位统计：P50/P90/P95/P99，加上吞吐量，以及实时系统指标采集（GPU利用率、功耗、显存、温度、CPU、内存）。
 
 ```
-Model      Mean(ms)  P95(ms)  FPS       GPU Util   GPU Power
-FP32       0.022     0.042    45730.8   待实测      待实测
-INT8       0.066     0.121    15230.2   待实测      待实测
+Model                             Mean(ms)  P95(ms)  FPS       GPU Util   GPU Power
+FP32 (Original)                    0.019     0.037    51486.1   待实测      待实测
+FP16                               0.047     0.085    21465.2   待实测      待实测
+INT8 Dynamic                       0.064     0.130    15676.3   待实测      待实测
+INT8 Static (random-norm calib.)   0.044     0.109    22781.1   待实测      待实测
 ```
 
 > **数字来源说明（避免无依据的精确值）**：上表的延迟/FPS 来自本机一次真实运行

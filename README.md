@@ -290,6 +290,6 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 **Built for RL researchers and engineers deploying models to the edge.**
 
-[⭐ Star this repo](https://github.com/dafahaha/rl-deploy-bench) · [🐛 Report an issue](https://github.com/dafahaha/rl-deploy-bench/issues) · [💬 Start a discussion](https://github.com/dafahaha/rl-deploy-bench/discussions)
+[⭐ Star this repo](https://github.com/dafahaha/rl-deploy-bench) · [🐛 Report an issue](https://github.com/dafahaha/rl-deploy-bench/issues)
 
 </div>

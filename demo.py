@@ -20,6 +20,7 @@ import tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 import numpy as np  # noqa: E402
+import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 
 from rl_deploy_bench import __version__  # noqa: E402
@@ -82,6 +83,12 @@ def main():
 
     # Step 1: Create policy
     print_header("Step 1: Create RL Policy")
+    # Reproducibility: the only unseeded RNG in this pipeline is torch's global
+    # generator, which initializes DemoPolicy's Linear weights. Pin it before
+    # building the policy (same seed as examples/readme_benchmark.py) so the
+    # printed parameter count and quantization MSE values come out identical on
+    # every re-run. Wall-clock latency still varies with system load.
+    torch.manual_seed(42)
     policy = DemoPolicy()
     policy.eval()
     total_params = sum(p.numel() for p in policy.parameters())
@@ -129,7 +136,7 @@ def main():
     for name, path in models:
         inf = OnnxRuntimeInference(path)
         inferences.append(inf)
-        result = benchmark_latency(inf, obs_shape, num_warmup=20, num_runs=200)
+        result = benchmark_latency(inf, obs_shape, num_warmup=20, num_runs=200, seed=42)
         results.append(result)
         print(
             f"  {name:6s}: mean={result.latency.mean_ms:.3f}ms, "
@@ -139,7 +146,7 @@ def main():
 
     # Step 5: Accuracy comparison
     print_header("Step 5: Accuracy Comparison (vs FP32)")
-    test_obs = generate_test_observations(obs_shape, num_samples=300)
+    test_obs = generate_test_observations(obs_shape, num_samples=300, seed=0)
     fp32_actions = np.array([inferences[0].infer(o).actions[0] for o in test_obs])
 
     accuracy_results = [None]  # FP32 is baseline
