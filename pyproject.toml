@@ -82,7 +82,6 @@ Homepage = "https://github.com/dafahaha/rl-deploy-bench"
 Documentation = "https://github.com/dafahaha/rl-deploy-bench/blob/main/API.md"
 Repository = "https://github.com/dafahaha/rl-deploy-bench.git"
 Issues = "https://github.com/dafahaha/rl-deploy-bench/issues"
-Discussions = "https://github.com/dafahaha/rl-deploy-bench/discussions"
 Changelog = "https://github.com/dafahaha/rl-deploy-bench/blob/main/CHANGELOG.md"
 
 [project.scripts]

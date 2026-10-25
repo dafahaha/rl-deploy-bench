@@ -119,7 +119,7 @@ v1.0已经发布，包含：
 - 3级量化（FP16/INT8动态/INT8静态）
 - 2种推理后端（ONNX Runtime/TensorRT框架）
 - 3个完整示例
-- 79个单元测试（78通过 + 1跳过；跳过的是未装 [sb3] extras 的 SB3 导出一致性测试）
+- 79个单元测试（默认收集 79 个；其中 1 个 SB3 导出一致性测试用 `importorskip` 守卫——未装 `[sb3]` extras 时自动跳过，即 78 passed + 1 skipped；装了 `[sb3]` 后该测试真实运行，79 passed / 0 skipped。跳过不是固定失败）
 - 6个CLI命令
 - GitHub Actions CI
 
