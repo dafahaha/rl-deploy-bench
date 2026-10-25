@@ -106,14 +106,35 @@ generate_html_report("report.html", [result], ["INT8 Model"])
 
 ## 📊 Benchmark Example Output
 
+> **Real measured output — not illustrative numbers.** The table below is produced
+> by running `python examples/readme_benchmark.py`, which drives this toolkit's
+> own export → quantize → benchmark pipeline on a small synthetic MLP policy
+> (4→128→64→2, the same architecture as `demo.py`). Raw run log:
+> [`docs/readme_benchmark_output.txt`](docs/readme_benchmark_output.txt).
+> Measured on Windows (Python 3.13.16, ONNX Runtime 1.31.0, single intra-op
+> thread to reduce scheduling jitter) on 2026-10-26. Latency numbers are
+> machine- and load-dependent — re-run the script on your own hardware before
+> quoting them as your own results.
+
 ```
-Model                          Mean(ms)   P95(ms)    FPS        Action MSE   Verdict
-------------------------------------------------------------------------------------
-FP32 (Original)                0.073      0.071      13699.8    0.00000000   baseline
-FP16                           0.068      0.065      14705.9    0.00000001   pass
-INT8 Dynamic                   0.346      0.188      2892.6     0.00000851   pass
-INT8 Static (Calibrated)       0.410      0.286      2436.7     0.00001319   pass
+Model                              Mean(ms)  P95(ms)   FPS       Action MSE   Verdict
+--------------------------------------------------------------------------------------
+FP32 (Original)                    0.022     0.042     45730.8   0.00000000   baseline
+FP16                               0.026     0.045     38244.7   0.00000000   pass
+INT8 Dynamic                       0.066     0.121     15230.2   0.00000273   pass
+INT8 Static (random-norm calib.)   0.079     0.130     12694.7   0.00000478   pass
 ```
+
+> **How to read this table (honesty notes)**:
+> - On this machine the quantized variants are *slower* than FP32. The policy is
+>   tiny (~85k params), so INT8 MatMulInteger and manual FP16 conversion
+>   overhead dominates; speedups are expected only on larger models or GPU
+>   execution. P95 ≥ Mean ≥ P50 holds in every row, as it must for a real
+>   latency distribution.
+> - "INT8 Static (random-norm calib.)" is calibrated on random-normal
+>   observations, **not** environment data. True environment-based calibration
+>   (Pendulum-v1) needs the `[sb3]` + gymnasium extras; see
+>   `examples/end_to_end_benchmark.py`.
 
 > **Throughput (FPS) 口径**: 表中 FPS 为纯推理算力吞吐（仅累计每次 `session.run` 的内部时延），**不含** Python 调度、数据拼装与监控快照等循环开销，因此高于真实端到端链路 FPS，跨模型比较时口径一致。
 

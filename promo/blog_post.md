@@ -71,10 +71,18 @@ rl-deploy-bench quantize policy.onnx --mode static --calibration-file calib.npz
 不只是测mean latency，而是完整的百分位统计：P50/P90/P95/P99，加上吞吐量，以及实时系统指标采集（GPU利用率、功耗、显存、温度、CPU、内存）。
 
 ```
-Model      Mean(ms)  P95(ms)  P99(ms)  FPS      GPU Util  GPU Power
-FP32       0.073     0.071     0.120     13699.8  45%       65W
-INT8       0.346     0.188     0.410     2892.6   32%       45W
+Model      Mean(ms)  P95(ms)  FPS       GPU Util   GPU Power
+FP32       0.022     0.042    45730.8   待实测      待实测
+INT8       0.066     0.121    15230.2   待实测      待实测
 ```
+
+> **数字来源说明（避免无依据的精确值）**：上表的延迟/FPS 来自本机一次真实运行
+> （Windows, Python 3.13.16, ONNX Runtime CPU EP；小 MLP 策略 4→128→64→2），
+> 复现命令：`python examples/readme_benchmark.py`，原始日志见
+> `docs/readme_benchmark_output.txt`。GPU 利用率 / 功耗两列**没有填任何精确值**——
+> 它们强依赖你的具体设备、驱动版本和批次，必须在目标机器上用 pynvml 实测后填入，
+> 这里统一标注「待实测」。注意本机实测中量化模型反而比 FP32 慢（模型太小，INT8
+> kernel 开销占主导），不要预设量化一定更快。
 
 ### 5. 跨平台支持
 
@@ -109,7 +117,7 @@ v1.0已经发布，包含：
 - 3级量化（FP16/INT8动态/INT8静态）
 - 2种推理后端（ONNX Runtime/TensorRT框架）
 - 3个完整示例
-- 22个单元测试，全部通过
+- 79个单元测试（78通过 + 1跳过；跳过的是未装 [sb3] extras 的 SB3 导出一致性测试）
 - 6个CLI命令
 - GitHub Actions CI
 
