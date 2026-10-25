@@ -129,10 +129,14 @@ generate_html_report("report.html", [result], ["INT8 Model"])
 > own export → quantize → benchmark pipeline on a small synthetic MLP policy
 > (4→128→64→2, the same architecture as `demo.py`). Raw run log:
 > [`docs/readme_benchmark_output.txt`](docs/readme_benchmark_output.txt).
-> Measured on Windows (Python 3.13.16, ONNX Runtime 1.31.0, single intra-op
-> thread to reduce scheduling jitter) on 2026-10-26. Latency numbers are
-> machine- and load-dependent — re-run the script on your own hardware before
-> quoting them as your own results.
+> Measured on Windows (Python 3.13.16, ONNX Runtime 1.31.0 **CPU build** —
+> inference ran on the **CPUExecutionProvider (CPU EP)** only; no
+> CUDAExecutionProvider available in this onnxruntime build; intra-op thread
+> count pinned to 1 to reduce scheduling jitter) on 2026-10-26. The host
+> machine has an NVIDIA GPU (RTX 4060 Laptop) listed in the run log header,
+> but that line is hardware probing only — inference did **not** use the GPU.
+> Latency numbers are machine- and load-dependent — re-run the script on your
+> own hardware before quoting them as your own results.
 
 ```
 Model                              Mean(ms)  P95(ms)   FPS       Action MSE   Verdict
