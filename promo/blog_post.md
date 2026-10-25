@@ -112,7 +112,7 @@ SB3有export功能，但只支持ONNX导出，没有量化、基准、对比、�
 ## 项目现状
 
 v1.0已经发布，包含：
-- 23个Python源文件，9个核心模块
+- 26个Python源文件，9个核心模块
 - 3种导出格式（ONNX/TorchScript/SB3）
 - 3级量化（FP16/INT8动态/INT8静态）
 - 2种推理后端（ONNX Runtime/TensorRT框架）

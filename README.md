@@ -119,10 +119,10 @@ generate_html_report("report.html", [result], ["INT8 Model"])
 ```
 Model                              Mean(ms)  P95(ms)   FPS       Action MSE   Verdict
 --------------------------------------------------------------------------------------
-FP32 (Original)                    0.022     0.042     45730.8   0.00000000   baseline
-FP16                               0.026     0.045     38244.7   0.00000000   pass
-INT8 Dynamic                       0.066     0.121     15230.2   0.00000273   pass
-INT8 Static (random-norm calib.)   0.079     0.130     12694.7   0.00000478   pass
+FP32 (Original)                     0.019     0.037     51486.1   0.00000000   baseline
+FP16                                0.047     0.085     21465.2   0.00000000   pass
+INT8 Dynamic                        0.064     0.130     15676.3   0.00000250   pass
+INT8 Static (random-norm calib.)    0.044     0.109     22781.1   0.00000548   pass
 ```
 
 > **How to read this table (honesty notes)**:

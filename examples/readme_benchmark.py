@@ -27,6 +27,7 @@ import tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import numpy as np  # noqa: E402
+import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 
 from rl_deploy_bench.benchmark.accuracy import (  # noqa: E402
@@ -74,6 +75,13 @@ def main():
     else:
         print("GPU: none detected (CPU-only run)")
     print()
+
+    # Reproducibility: the only unseeded RNG in this pipeline is torch's global
+    # generator, which initializes DemoPolicy's Linear weights. Pin it before
+    # building the policy so the Action MSE rows come out identical on every
+    # re-run. (NumPy calibration data and test observations are already seeded
+    # locally below, and latency benchmarking takes its own seed.)
+    torch.manual_seed(42)
 
     policy = DemoPolicy()
     policy.eval()
