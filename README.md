@@ -47,13 +47,31 @@ RL-Deploy-Bench is built **specifically for RL deployment**, with RL-specific me
 
 ### Install
 
-```bash
-pip install rl-deploy-bench
+> **Status — not on PyPI yet.** The `rl-deploy-bench` package is **not
+> published to PyPI** (the PyPI JSON API and the simple index both return 404
+> for `rl-deploy-bench`). Until a PyPI release is cut, install from the source
+> repository:
 
-# Optional extras
-pip install rl-deploy-bench[nvidia]    # NVIDIA GPU monitoring
-pip install rl-deploy-bench[jetson]    # Jetson monitoring
-pip install rl-deploy-bench[sb3]       # Stable Baselines3 support
+```powershell
+git clone https://github.com/dafahaha/rl-deploy-bench.git
+cd rl-deploy-bench
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install .
+```
+
+For an editable / development install, replace the last line with:
+
+```powershell
+pip install -e .
+```
+
+Optional extras (GPU / Jetson / Stable Baselines3 support):
+
+```powershell
+pip install ".[nvidia]"     # NVIDIA GPU monitoring (pynvml)
+pip install ".[jetson]"     # Jetson monitoring (jetson-stats)
+pip install ".[sb3]"        # Stable Baselines3 + Gymnasium support
 ```
 
 ### 3-Step Workflow
@@ -127,10 +145,10 @@ INT8 Static (random-norm calib.)    0.044     0.109     22781.1   0.00000548   p
 
 > **How to read this table (honesty notes)**:
 > - On this machine the quantized variants are *slower* than FP32. The policy is
->   tiny (~85k params), so INT8 MatMulInteger and manual FP16 conversion
->   overhead dominates; speedups are expected only on larger models or GPU
->   execution. P95 ≥ Mean ≥ P50 holds in every row, as it must for a real
->   latency distribution.
+>   tiny (9,026 params: 4→128→64→2 MLP), so INT8 MatMulInteger and manual FP16
+>   conversion overhead dominates; speedups are expected only on larger models
+>   or GPU execution. P95 ≥ Mean ≥ P50 holds in every row, as it must for a
+>   real latency distribution.
 > - "INT8 Static (random-norm calib.)" is calibrated on random-normal
 >   observations, **not** environment data. True environment-based calibration
 >   (Pendulum-v1) needs the `[sb3]` + gymnasium extras; see
@@ -226,7 +244,8 @@ rl_deploy_bench/
 ## 🗺️ Roadmap
 
 - [x] v1.0 — Core: ONNX/TorchScript export, FP16/INT8 quantization, latency benchmark, accuracy comparison, reports
-- [x] v1.1 — PyPI release, improved CLI, demo scripts, community templates
+- [x] v1.1 — improved CLI, demo scripts, community templates (source/GitHub release; **not yet on PyPI**)
+- [ ] v1.x — PyPI release (tracked; install from source until then)
 - [ ] v1.2 — ManiSkill/Gibson environment integration, multi-GPU benchmarking
 - [ ] v2.0 — TensorRT full integration, distributed benchmarking, model zoo
 

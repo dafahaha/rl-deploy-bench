@@ -12,8 +12,8 @@ Usage:
 Notes on honesty:
 - Static INT8 here is calibrated on random-normal observations (no Gymnasium
   env / SB3 policy available in this run). Environment-based calibration
-  needs `pip install rl-deploy-bench[sb3] gymnasium`; see
-  examples/end_to_end_benchmark.py.
+  needs the `[sb3]` extra installed from source (`pip install ".[sb3]"` after
+  cloning the repo); see examples/end_to_end_benchmark.py.
 - Latency numbers are machine- and load-dependent; re-run this script on your
   own hardware before quoting them as your own results.
 """
